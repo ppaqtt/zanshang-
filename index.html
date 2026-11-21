@@ -117,6 +117,9 @@
     gap:12px;
     padding:22px 20px 0;
   }
+  .grid .amt:last-child:nth-child(3n+1){
+    grid-column:2;
+  }
   .amt{
     height:58px;
     background:#fff;
@@ -263,7 +266,7 @@
       <p class="modal-title" id="modalTitle"></p>
       <div class="qr-wrap" id="qrWrap"></div>
       <p class="modal-hint" id="modalHint"></p>
-      <p class="modal-tip">该收款码金额不固定，请在付款页手动填写上方金额</p>
+      <p class="modal-tip">付款页请选择与上方金额一致的赞赏项</p>
       <button class="modal-done" id="modalDone">完成</button>
     </div>
   </div>
@@ -297,7 +300,7 @@
     }
   ];
 
-  const AMOUNTS = [66, 39, 99, 129, 256, 188, 298, 398, 486];
+  const AMOUNTS = [1, 5, 10, 20, 50, 100, 500, 666, 888, 1000];
   /* ====== 配置区结束 ====== */
 
   let currentProject = 0;
@@ -368,7 +371,7 @@
   function openModal(amount) {
     const p = PROJECTS[currentProject];
     modalTitle.textContent = '向「' + p.name + '」赞赏 ¥' + amount;
-    modalHint.innerHTML = '长按识别二维码，按 <b>¥' + amount + '</b> 完成赞赏';
+    modalHint.innerHTML = '长按识别二维码，在付款页选择「赞赏 ' + amount + 'r」';
     qrWrap.innerHTML = '';
 
     const img = document.createElement('img');
