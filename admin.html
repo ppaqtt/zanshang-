@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>赞赏管理台</title>
+<style>
+  :root{
+    --coral:#E4573D;
+    --coral-deep:#D9462B;
+    --ink:#2b2b2b;
+    --muted:#9a9a9a;
+    --line:#ececec;
+    --bg:#e9e9ec;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    font-size:14px;
+  }
+  button,input,select{font-family:inherit;}
+
+  .topbar{background:#fff;border-bottom:1px solid var(--line);}
+  .topbar-inner{
+    max-width:1040px;margin:0 auto;padding:14px 20px;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+  }
+  .logo{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;}
+  .logo .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(145deg,#ec6a50,#d63f24);}
+  .logo small{color:var(--muted);font-weight:400;font-size:12px;}
+  .topbar a{
+    color:var(--coral-deep);text-decoration:none;font-size:13px;
+    padding:8px 14px;border:1px solid #f3d8d1;border-radius:999px;background:#fff7f5;
+  }
+
+  .wrap{max-width:1040px;margin:0 auto;padding:22px 16px 70px;}
+
+  .card{
+    background:#fff;border-radius:16px;padding:22px;
+    box-shadow:0 2px 14px rgba(0,0,0,.05);
+    margin-bottom:18px;
+  }
+  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:6px;}
+  .card-head h2{margin:0;font-size:17px;font-weight:600;}
+  .card-head p{margin:6px 0 0;font-size:12px;color:var(--muted);line-height:1.6;}
+
+  .note{
+    margin:14px 0 18px;padding:10px 12px;border-radius:10px;
+    background:#fdf6f3;border:1px solid #f6e2db;color:#a4705f;
+    font-size:12px;line-height:1.7;
+  }
+  .note b{color:var(--coral-deep);font-weight:600;}
+
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field label{font-size:12px;color:#8d8d8d;}
+  .field input{
+    width:100%;border:1px solid #e4e4e6;border-radius:9px;
+    padding:9px 11px;font-size:13px;color:var(--ink);background:#fff;
+    outline:none;transition:border-color .15s;
+  }
+  .field input:focus{border-color:#eaa393;}
+  .field input.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;}
+
+  .proj{
+    border:1px solid #f0f0f2;border-radius:12px;padding:14px;margin-bottom:12px;
+    background:#fcfcfd;
+  }
+  .proj-grid{display:grid;grid-template-columns:1.2fr .7fr 1.7fr 1.7fr;gap:10px;}
+  .proj .field.sub{margin-top:10px;}
+  @media (max-width:860px){
+    .proj-grid{grid-template-columns:1fr 1fr;}
+    .proj-grid .field:nth-child(3),.proj-grid .field:nth-child(4){grid-column:span 1;}
+  }
+  @media (max-width:520px){
+    .proj-grid{grid-template-columns:1fr;}
+  }
+
+  .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;align-items:center;}
+  .btn{
+    border:0;border-radius:10px;padding:10px 16px;font-size:13px;cursor:pointer;
+    background:var(--coral);color:#fff;transition:opacity .15s;
+  }
+  .btn:hover{opacity:.9;}
+  .btn.ghost{background:#fff;color:#666;border:1px solid #e2e2e4;}
+  .btn.ghost:hover{background:#f7f7f8;}
+  .btn.danger{background:#fff;color:#c0392b;border:1px solid #f0cfc9;}
+  .btn.sm{padding:6px 11px;font-size:12px;border-radius:8px;}
+  .stamp{margin-left:auto;font-size:12px;color:var(--muted);}
+
+  .stats{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 4px;}
+  .stat{
+    flex:1 1 150px;border:1px solid #f0f0f2;border-radius:12px;padding:12px 14px;background:#fcfcfd;
+  }
+  .stat .k{font-size:11px;color:var(--muted);}
+  .stat .v{font-size:20px;font-weight:600;margin-top:4px;color:#3a3a3a;}
+  .stat .v small{font-size:12px;font-weight:400;color:var(--muted);margin-left:2px;}
+
+  .filters{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 12px;}
+  .filters input,.filters select{
+    border:1px solid #e4e4e6;border-radius:9px;padding:8px 11px;font-size:13px;
+    background:#fff;color:#444;outline:none;
+  }
+  .filters input{flex:1 1 200px;min-width:0;}
+  .filters input:focus,.filters select:focus{border-color:#eaa393;}
+
+  .table-wrap{overflow-x:auto;border:1px solid #f0f0f2;border-radius:12px;}
+  table{width:100%;border-collapse:collapse;min-width:620px;}
+  th,td{padding:11px 14px;text-align:left;font-size:12.5px;white-space:nowrap;}
+  th{background:#fafafb;color:#8d8d8d;font-weight:500;font-size:11.5px;letter-spacing:.3px;}
+  td{border-top:1px solid #f3f3f5;}
+  td.oid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:#6b5b4d;}
+  td.num{font-variant-numeric:tabular-nums;}
+  tbody tr:hover{background:#fdfdfd;}
+
+  .empty{padding:46px 20px;text-align:center;color:#b5b5b5;font-size:13px;line-height:1.8;}
+  .empty span{display:block;font-size:12px;color:#c9c9c9;}
+
+  .toast{
+    position:fixed;left:50%;bottom:34px;transform:translate(-50%,12px);
+    background:rgba(40,40,40,.92);color:#fff;font-size:13px;padding:10px 18px;
+    border-radius:999px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;
+    z-index:50;max-width:80vw;text-align:center;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0);}
+
+  .foot{text-align:center;font-size:11.5px;color:#b3b3b3;margin-top:26px;line-height:1.9;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="logo"><span class="dot"></span>赞赏管理台 <small>本地工具</small></div>
+    <a href="index.html">返回赞赏页</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>页面配置</h2>
+        <p>调整金额档位与三个项目的展示信息，改完导出代码，粘贴回 index.html 的配置区。</p>
+      </div>
+    </div>
+
+    <div class="note">
+      这是纯静态站点，管理页<b>无法直接改写线上的 index.html</b>。这里的修改只保存在当前浏览器，点「生成配置代码」复制后，替换掉 index.html 里 <b>配置区</b> 的内容才会真正生效。
+    </div>
+
+    <div class="field">
+      <label>赞赏金额档位（用逗号分隔，从小到大）</label>
+      <input id="amountsInput" class="mono" placeholder="1, 5, 10, 20, 50, 100, 500, 666, 888, 1000">
+    </div>
+
+    <div id="projList" style="margin-top:16px;"></div>
+
+    <div class="actions">
+      <button class="btn" id="saveBtn">保存草稿</button>
+      <button class="btn ghost" id="resetBtn">恢复页面现有配置</button>
+      <button class="btn ghost" id="exportBtn">生成配置代码</button>
+      <span class="stamp" id="stamp"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>订单记录</h2>
+        <p>赞赏页每次点开金额弹层都会生成一个订单号，记录保存在浏览器本地。</p>
+      </div>
+      <button class="btn ghost sm" id="refreshBtn">刷新</button>
+    </div>
+
+    <div class="note">
+      这里只能看到<b>当前浏览器</b>生成的记录，别人手机上的不会同步过来，也不代表真实收款。是否到账请以「商家助手」的小票和对账单为准。
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">记录条数</div><div class="v" id="statCount">0<small>笔</small></div></div>
+      <div class="stat"><div class="k">合计金额</div><div class="v">¥<span id="statSum">0</span></div></div>
+      <div class="stat"><div class="k">涉及项目</div><div class="v" id="statProjects">0<small>个</small></div></div>
+    </div>
+
+    <div class="filters">
+      <input id="searchInput" placeholder="搜索订单号">
+      <select id="projectFilter"><option value="">全部项目</option></select>
+      <select id="timeFilter">
+        <option value="all">全部时间</option>
+        <option value="today">今天</option>
+        <option value="7d">近 7 天</option>
+        <option value="30d">近 30 天</option>
+      </select>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>订单号</th><th>项目</th><th>金额</th><th>生成时间</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="orderBody"></tbody>
+      </table>
+      <div class="empty" id="emptyState" hidden>
+        暂无记录
+        <span>先去赞赏页点开任意金额，生成订单号后再回来刷新</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn ghost" id="csvBtn">导出 CSV</button>
+      <button class="btn danger" id="clearBtn">清空记录</button>
+      <span class="stamp" id="filterStamp"></span>
+    </div>
+  </section>
+
+  <div class="foot">赞赏管理台 · 数据仅存于本机浏览器<br>请勿将本页公开分享给访客</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  /* 页面现有配置（与 index.html 保持一致，仅作默认值） */
+  const DEFAULT_CONFIG = {
+    amounts: [1, 5, 10, 20, 50, 100, 500, 666, 888, 1000],
+    projects: [
+      { id:'qingjian', name:'清笺', code:'qingjian', prefix:'QJ', qr:'assets/qingjian-qr.jpg', avatar:'assets/qingjian-logo.jpg', sub:'感谢你的支持与陪伴' },
+      { id:'xiaomengjizhang', name:'小萌记账', code:'xiaomengjizhang', prefix:'XM', qr:'assets/xiaomengjizhang-qr.jpg', avatar:'assets/xiaomengjizhang-logo.jpg', sub:'感谢你的支持与陪伴' },
+      { id:'ppdxpz', name:'平平的小破站', code:'ppdxpz', prefix:'PP', qr:'assets/ppdxpz-qr.jpg', avatar:'assets/ppdxpz-logo.webp', sub:'感谢你的支持与陪伴' }
+    ]
+  };
+
+  const CONFIG_KEY = 'zan_admin_config';
+  const ORDER_KEY = 'zan_orders';
+
+  const projList = document.getElementById('projList');
+  const amountsInput = document.getElementById('amountsInput');
+  const stampEl = document.getElementById('stamp');
+  const orderBody = document.getElementById('orderBody');
+  const emptyState = document.getElementById('emptyState');
+  const searchInput = document.getElementById('searchInput');
+  const projectFilter = document.getElementById('projectFilter');
+  const timeFilter = document.getElementById('timeFilter');
+  const filterStamp = document.getElementById('filterStamp');
+  const toastEl = document.getElementById('toast');
+
+  let config = loadConfig();
+
+  function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+  function loadConfig() {
+    try {
+      const raw = localStorage.getItem(CONFIG_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.projects) && Array.isArray(parsed.amounts)) return parsed;
+      }
+    } catch (e) {}
+    return clone(DEFAULT_CONFIG);
+  }
+
+  function parseAmounts(str) {
+    const nums = String(str).split(/[,，\s]+/).map(Number)
+      .filter(n => isFinite(n) && n > 0)
+      .map(n => Math.round(n * 100) / 100);
+    return Array.from(new Set(nums)).sort((a, b) => a - b);
+  }
+
+  function renderProjects() {
+    projList.innerHTML = '';
+    config.projects.forEach((p, i) => {
+      const box = document.createElement('div');
+      box.className = 'proj';
+      box.innerHTML =
+        '<div class="proj-grid">' +
+          field('项目名称', 'name', p.name, i) +
+          field('订单号前缀', 'prefix', p.prefix, i, true) +
+          field('二维码图片路径', 'qr', p.qr, i, true) +
+          field('Logo 图片路径', 'avatar', p.avatar, i, true) +
+        '</div>' +
+        '<div class="field sub"><label>副标题</label>' +
+          '<input data-i="' + i + '" data-k="sub" value="' + esc(p.sub || '') + '"></div>';
+      projList.appendChild(box);
+    });
+  }
+
+  function field(label, key, value, i, mono) {
+    return '<div class="field"><label>' + label + '</label>' +
+      '<input' + (mono ? ' class="mono"' : '') + ' data-i="' + i + '" data-k="' + key + '" value="' + esc(value) + '"></div>';
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function readForm() {
+    const amounts = parseAmounts(amountsInput.value);
+    if (!amounts.length) { toast('金额档位不能为空'); return null; }
+    const projects = clone(config.projects);
+    let bad = false;
+    projList.querySelectorAll('input').forEach(inp => {
+      const i = Number(inp.dataset.i);
+      const k = inp.dataset.k;
+      const v = inp.value.trim();
+      if (k === 'prefix') {
+        const up = v.toUpperCase();
+        if (!/^[A-Z]{1,4}$/.test(up)) bad = true;
+        projects[i][k] = up;
+      } else {
+        projects[i][k] = v;
+      }
+      if (!v) bad = true;
+    });
+    if (bad) { toast('名称、前缀、图片路径都不能为空，前缀用 1-4 个字母'); return null; }
+    return { amounts, projects };
+  }
+
+  function saveConfig() {
+    const data = readForm();
+    if (!data) return false;
+    config = data;
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    stampEl.textContent = '草稿已保存 ' + timeText(new Date().toISOString());
+    toast('草稿已保存');
+    return true;
+  }
+
+  function exportCode() {
+    const data = readForm();
+    if (!data) return;
+    const projects = JSON.stringify(data.projects, null, 2).replace(/\n/g, '\n  ');
+    const snippet =
+      '  /* ====== 配置区：改这里即可 ====== */\n' +
+      '  const PROJECTS = ' + projects + ';\n\n' +
+      '  const AMOUNTS = ' + JSON.stringify(data.amounts) + ';\n' +
+      '  /* ====== 配置区结束 ====== */';
+    copyText(snippet).then(() => toast('配置代码已复制，粘贴到 index.html 配置区'))
+      .catch(() => {
+        window.prompt('复制下面的配置代码，替换 index.html 配置区：', snippet);
+      });
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise((resolve, reject) => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      ok ? resolve() : reject();
+    });
+  }
+
+  /* ====== 订单记录 ====== */
+
+  function loadOrders() {
+    try {
+      const list = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]');
+      return Array.isArray(list) ? list.filter(r => r && r.order) : [];
+    } catch (e) { return []; }
+  }
+
+  function saveOrders(list) {
+    localStorage.setItem(ORDER_KEY, JSON.stringify(list.slice(0, 200)));
+  }
+
+  function timeText(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return '—';
+    const p = n => (n < 10 ? '0' + n : '' + n);
+    return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' +
+      p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+
+  function inRange(iso, range) {
+    if (range === 'all') return true;
+    const t = new Date(iso).getTime();
+    if (isNaN(t)) return false;
+    const now = Date.now();
+    if (range === 'today') {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      return t >= d.getTime();
+    }
+    if (range === '7d') return t >= now - 7 * 864e5;
+    if (range === '30d') return t >= now - 30 * 864e5;
+    return true;
+  }
+
+  function currentRows() {
+    const all = loadOrders();
+    const q = searchInput.value.trim().toLowerCase();
+    const proj = projectFilter.value;
+    const range = timeFilter.value;
+    return all.filter(r =>
+      (!q || String(r.order).toLowerCase().indexOf(q) > -1) &&
+      (!proj || r.project === proj) &&
+      inRange(r.at, range)
+    ).sort((a, b) => new Date(b.at) - new Date(a.at));
+  }
+
+  function renderProjectFilter() {
+    const all = loadOrders();
+    const names = [];
+    config.projects.forEach(p => { if (names.indexOf(p.name) < 0) names.push(p.name); });
+    all.forEach(r => { if (r.project && names.indexOf(r.project) < 0) names.push(r.project); });
+    const cur = projectFilter.value;
+    projectFilter.innerHTML = '<option value="">全部项目</option>' +
+      names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
+    projectFilter.value = names.indexOf(cur) > -1 ? cur : '';
+  }
+
+  function renderStats(all) {
+    const sum = all.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const projects = {};
+    all.forEach(r => { projects[r.project] = 1; });
+    document.getElementById('statCount').innerHTML = all.length + '<small>笔</small>';
+    document.getElementById('statSum').textContent = sum.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+    document.getElementById('statProjects').innerHTML = Object.keys(projects).length + '<small>个</small>';
+  }
+
+  function renderOrders() {
+    const rows = currentRows();
+    const all = loadOrders();
+    renderStats(all);
+    renderProjectFilter();
+
+    orderBody.innerHTML = '';
+    if (!rows.length) {
+      emptyState.hidden = false;
+      filterStamp.textContent = '';
+      return;
+    }
+    emptyState.hidden = true;
+    filterStamp.textContent = '当前筛选 ' + rows.length + ' 笔';
+
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="oid">' + esc(r.order) + '</td>' +
+        '<td>' + esc(r.project || '—') + '</td>' +
+        '<td class="num">¥' + (Number(r.amount) || 0) + '</td>' +
+        '<td>' + timeText(r.at) + '</td>' +
+        '<td><button class="btn ghost sm" data-order="' + esc(r.order) + '" data-at="' + esc(r.at) + '">删除</button></td>';
+      orderBody.appendChild(tr);
+    });
+  }
+
+  function deleteOrder(order, at) {
+    const list = loadOrders();
+    const idx = list.findIndex(r => r.order === order && r.at === at);
+    if (idx < 0) return;
+    list.splice(idx, 1);
+    saveOrders(list);
+    renderOrders();
+    toast('已删除 1 条记录');
+  }
+
+  function exportCsv() {
+    const rows = currentRows();
+    if (!rows.length) { toast('没有可导出的记录'); return; }
+    const head = ['订单号', '项目', '金额', '生成时间'];
+    const lines = rows.map(r =>
+      [r.order, r.project || '', r.amount, timeText(r.at)]
+        .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
+    );
+    const csv = '\ufeff' + head.join(',') + '\n' + lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const d = new Date();
+    const p = n => (n < 10 ? '0' + n : '' + n);
+    const name = '赞赏订单_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '.csv';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast('已导出 ' + rows.length + ' 条记录');
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2000);
+  }
+
+  /* ====== 事件 ====== */
+
+  document.getElementById('saveBtn').addEventListener('click', saveConfig);
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    config = clone(DEFAULT_CONFIG);
+    amountsInput.value = config.amounts.join(', ');
+    renderProjects();
+    localStorage.removeItem(CONFIG_KEY);
+    stampEl.textContent = '';
+    toast('已恢复为页面现有配置');
+  });
+
+  document.getElementById('exportBtn').addEventListener('click', exportCode);
+  document.getElementById('refreshBtn').addEventListener('click', () => { renderOrders(); toast('已刷新'); });
+  document.getElementById('csvBtn').addEventListener('click', exportCsv);
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    const count = loadOrders().length;
+    if (!count) { toast('当前没有记录'); return; }
+    if (!window.confirm('确定清空全部 ' + count + ' 条本地记录吗？此操作不可撤销。')) return;
+    saveOrders([]);
+    renderOrders();
+    toast('已清空记录');
+  });
+
+  searchInput.addEventListener('input', renderOrders);
+  projectFilter.addEventListener('change', renderOrders);
+  timeFilter.addEventListener('change', renderOrders);
+
+  orderBody.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-order]');
+    if (!btn) return;
+    deleteOrder(btn.dataset.order, btn.dataset.at);
+  });
+
+  window.addEventListener('storage', e => {
+    if (e.key === ORDER_KEY) renderOrders();
+  });
+
+  /* 初始化 */
+  amountsInput.value = config.amounts.join(', ');
+  renderProjects();
+  renderOrders();
+</script>
+</body>
+</html>
