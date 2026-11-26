@@ -16,11 +16,10 @@
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;}
+  [hidden]{display:none !important;}
   body{
     font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
-    background:var(--bg);
-    color:var(--ink);
-    font-size:14px;
+    background:var(--bg);color:var(--ink);font-size:14px;
   }
   button,input,select{font-family:inherit;}
 
@@ -32,6 +31,9 @@
   .logo{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;}
   .logo .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(145deg,#ec6a50,#d63f24);}
   .logo small{color:var(--muted);font-weight:400;font-size:12px;}
+  .top-right{display:flex;align-items:center;gap:10px;}
+  .who{font-size:12px;color:var(--muted);}
+  .who b{color:#555;font-weight:600;margin-left:2px;}
   .topbar a{
     color:var(--coral-deep);text-decoration:none;font-size:13px;
     padding:8px 14px;border:1px solid #f3d8d1;border-radius:999px;background:#fff7f5;
@@ -41,8 +43,7 @@
 
   .card{
     background:#fff;border-radius:16px;padding:22px;
-    box-shadow:0 2px 14px rgba(0,0,0,.05);
-    margin-bottom:18px;
+    box-shadow:0 2px 14px rgba(0,0,0,.05);margin-bottom:18px;
   }
   .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:6px;}
   .card-head h2{margin:0;font-size:17px;font-weight:600;}
@@ -65,15 +66,11 @@
   .field input:focus{border-color:#eaa393;}
   .field input.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;}
 
-  .proj{
-    border:1px solid #f0f0f2;border-radius:12px;padding:14px;margin-bottom:12px;
-    background:#fcfcfd;
-  }
+  .proj{border:1px solid #f0f0f2;border-radius:12px;padding:14px;margin-bottom:12px;background:#fcfcfd;}
   .proj-grid{display:grid;grid-template-columns:1.2fr .7fr 1.7fr 1.7fr;gap:10px;}
   .proj .field.sub{margin-top:10px;}
   @media (max-width:860px){
     .proj-grid{grid-template-columns:1fr 1fr;}
-    .proj-grid .field:nth-child(3),.proj-grid .field:nth-child(4){grid-column:span 1;}
   }
   @media (max-width:520px){
     .proj-grid{grid-template-columns:1fr;}
@@ -85,6 +82,7 @@
     background:var(--coral);color:#fff;transition:opacity .15s;
   }
   .btn:hover{opacity:.9;}
+  .btn:disabled{opacity:.55;cursor:not-allowed;}
   .btn.ghost{background:#fff;color:#666;border:1px solid #e2e2e4;}
   .btn.ghost:hover{background:#f7f7f8;}
   .btn.danger{background:#fff;color:#c0392b;border:1px solid #f0cfc9;}
@@ -92,9 +90,7 @@
   .stamp{margin-left:auto;font-size:12px;color:var(--muted);}
 
   .stats{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 4px;}
-  .stat{
-    flex:1 1 150px;border:1px solid #f0f0f2;border-radius:12px;padding:12px 14px;background:#fcfcfd;
-  }
+  .stat{flex:1 1 150px;border:1px solid #f0f0f2;border-radius:12px;padding:12px 14px;background:#fcfcfd;}
   .stat .k{font-size:11px;color:var(--muted);}
   .stat .v{font-size:20px;font-weight:600;margin-top:4px;color:#3a3a3a;}
   .stat .v small{font-size:12px;font-weight:400;color:var(--muted);margin-left:2px;}
@@ -128,105 +124,146 @@
   .toast.show{opacity:1;transform:translate(-50%,0);}
 
   .foot{text-align:center;font-size:11.5px;color:#b3b3b3;margin-top:26px;line-height:1.9;}
+
+  /* 登录 */
+  .login{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+    background:linear-gradient(180deg,#f2f2f5 0%,#e9e9ec 100%);
+  }
+  .login-card{
+    width:100%;max-width:360px;background:#fff;border-radius:18px;
+    padding:30px 26px 26px;box-shadow:0 18px 50px rgba(0,0,0,.10);
+  }
+  .login-brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;margin-bottom:22px;}
+  .login-card h1{margin:0 0 6px;font-size:20px;font-weight:600;}
+  .login-sub{margin:0 0 20px;font-size:12px;color:var(--muted);}
+  .login-card .field{margin-bottom:14px;}
+  .login-card .btn{width:100%;padding:12px;font-size:14px;margin-top:4px;}
+  .login-err{margin:12px 0 0;font-size:12px;color:#c0392b;min-height:16px;text-align:center;}
+  .login-back{display:block;text-align:center;margin-top:16px;font-size:12px;color:#b3b3b3;text-decoration:none;}
 </style>
 </head>
 <body>
 
-<div class="topbar">
-  <div class="topbar-inner">
-    <div class="logo"><span class="dot"></span>赞赏管理台 <small>本地工具</small></div>
-    <a href="index.html">返回赞赏页</a>
-  </div>
+<!-- 登录 -->
+<div class="login" id="loginView" hidden>
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot" style="width:22px;height:22px;border-radius:7px;background:linear-gradient(145deg,#ec6a50,#d63f24);"></span>赞赏管理台</div>
+    <h1>登录</h1>
+    <p class="login-sub">请输入管理员账号</p>
+    <div class="field">
+      <label for="username">用户名</label>
+      <input id="username" autocomplete="username" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="password">密码</label>
+      <input id="password" type="password" autocomplete="current-password">
+    </div>
+    <button class="btn" type="submit" id="loginBtn">登录</button>
+    <p class="login-err" id="loginErr"></p>
+    <a class="login-back" href="index.html">返回赞赏页</a>
+  </form>
 </div>
 
-<div class="wrap">
-
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <h2>页面配置</h2>
-        <p>调整金额档位与三个项目的展示信息，改完导出代码，粘贴回 index.html 的配置区。</p>
+<!-- 主体 -->
+<div id="appView" hidden>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="logo"><span class="dot"></span>赞赏管理台 <small>数据存于数据库</small></div>
+      <div class="top-right">
+        <span class="who">当前账号<b id="userName"></b></span>
+        <button class="btn ghost sm" id="logoutBtn" type="button">退出</button>
+        <a href="index.html">返回赞赏页</a>
       </div>
     </div>
+  </div>
 
-    <div class="note">
-      这是纯静态站点，管理页<b>无法直接改写线上的 index.html</b>。这里的修改只保存在当前浏览器，点「生成配置代码」复制后，替换掉 index.html 里 <b>配置区</b> 的内容才会真正生效。
-    </div>
+  <div class="wrap">
 
-    <div class="field">
-      <label>赞赏金额档位（用逗号分隔，从小到大）</label>
-      <input id="amountsInput" class="mono" placeholder="1, 5, 10, 20, 50, 100, 500, 666, 888, 1000">
-    </div>
-
-    <div id="projList" style="margin-top:16px;"></div>
-
-    <div class="actions">
-      <button class="btn" id="saveBtn">保存草稿</button>
-      <button class="btn ghost" id="resetBtn">恢复页面现有配置</button>
-      <button class="btn ghost" id="exportBtn">生成配置代码</button>
-      <span class="stamp" id="stamp"></span>
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <h2>订单记录</h2>
-        <p>赞赏页每次点开金额弹层都会生成一个订单号，记录保存在浏览器本地。</p>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>页面配置</h2>
+          <p>调整金额档位与三个项目的展示信息，改完导出代码，粘贴回 index.html 的配置区。</p>
+        </div>
       </div>
-      <button class="btn ghost sm" id="refreshBtn">刷新</button>
-    </div>
 
-    <div class="note">
-      这里只能看到<b>当前浏览器</b>生成的记录，别人手机上的不会同步过来，也不代表真实收款。是否到账请以「商家助手」的小票和对账单为准。
-    </div>
-
-    <div class="stats">
-      <div class="stat"><div class="k">记录条数</div><div class="v" id="statCount">0<small>笔</small></div></div>
-      <div class="stat"><div class="k">合计金额</div><div class="v">¥<span id="statSum">0</span></div></div>
-      <div class="stat"><div class="k">涉及项目</div><div class="v" id="statProjects">0<small>个</small></div></div>
-    </div>
-
-    <div class="filters">
-      <input id="searchInput" placeholder="搜索订单号">
-      <select id="projectFilter"><option value="">全部项目</option></select>
-      <select id="timeFilter">
-        <option value="all">全部时间</option>
-        <option value="today">今天</option>
-        <option value="7d">近 7 天</option>
-        <option value="30d">近 30 天</option>
-      </select>
-    </div>
-
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>订单号</th><th>项目</th><th>金额</th><th>生成时间</th><th></th>
-          </tr>
-        </thead>
-        <tbody id="orderBody"></tbody>
-      </table>
-      <div class="empty" id="emptyState" hidden>
-        暂无记录
-        <span>先去赞赏页点开任意金额，生成订单号后再回来刷新</span>
+      <div class="note">
+        配置仍保存在<b>当前浏览器</b>，不走数据库，也不会自动改写线上文件。点「生成配置代码」复制后，替换 index.html 里<b>配置区</b>的内容才会对访客生效。
       </div>
-    </div>
 
-    <div class="actions">
-      <button class="btn ghost" id="csvBtn">导出 CSV</button>
-      <button class="btn danger" id="clearBtn">清空记录</button>
-      <span class="stamp" id="filterStamp"></span>
-    </div>
-  </section>
+      <div class="field">
+        <label>赞赏金额档位（用逗号分隔，从小到大）</label>
+        <input id="amountsInput" class="mono" placeholder="1, 5, 10, 20, 50, 100, 500, 666, 888, 1000">
+      </div>
 
-  <div class="foot">赞赏管理台 · 数据仅存于本机浏览器<br>请勿将本页公开分享给访客</div>
+      <div id="projList" style="margin-top:16px;"></div>
+
+      <div class="actions">
+        <button class="btn" id="saveBtn">保存草稿</button>
+        <button class="btn ghost" id="resetBtn">恢复页面现有配置</button>
+        <button class="btn ghost" id="exportBtn">生成配置代码</button>
+        <span class="stamp" id="stamp"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>订单记录</h2>
+          <p>赞赏页每次点开金额弹层都会写入一条记录，数据存在服务器 MySQL，换设备登录也能看到。</p>
+        </div>
+        <button class="btn ghost sm" id="refreshBtn">刷新</button>
+      </div>
+
+      <div class="note">
+        这里的记录代表<b>用户发起过赞赏</b>，不代表已经到账。是否真正付款，请以「商家助手」的小票和对账单为准。
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="k">记录条数</div><div class="v" id="statCount">0<small>笔</small></div></div>
+        <div class="stat"><div class="k">合计金额</div><div class="v">¥<span id="statSum">0</span></div></div>
+        <div class="stat"><div class="k">涉及项目</div><div class="v" id="statProjects">0<small>个</small></div></div>
+      </div>
+
+      <div class="filters">
+        <input id="searchInput" placeholder="搜索订单号">
+        <select id="projectFilter"><option value="">全部项目</option></select>
+        <select id="timeFilter">
+          <option value="all">全部时间</option>
+          <option value="today">今天</option>
+          <option value="7d">近 7 天</option>
+          <option value="30d">近 30 天</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>订单号</th><th>项目</th><th>金额</th><th>生成时间</th><th></th></tr>
+          </thead>
+          <tbody id="orderBody"></tbody>
+        </table>
+        <div class="empty" id="emptyState" hidden>
+          暂无记录
+          <span>先去赞赏页点开任意金额，生成订单号后再回来刷新</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn ghost" id="csvBtn">导出 CSV</button>
+        <button class="btn danger" id="clearBtn">清空记录</button>
+        <span class="stamp" id="filterStamp"></span>
+      </div>
+    </section>
+
+    <div class="foot">赞赏管理台 · 登录态 7 天有效<br>数据由服务器数据库提供</div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
-  /* 页面现有配置（与 index.html 保持一致，仅作默认值） */
   const DEFAULT_CONFIG = {
     amounts: [1, 5, 10, 20, 50, 100, 500, 666, 888, 1000],
     projects: [
@@ -237,8 +274,13 @@
   };
 
   const CONFIG_KEY = 'zan_admin_config';
-  const ORDER_KEY = 'zan_orders';
 
+  const loginView = document.getElementById('loginView');
+  const appView = document.getElementById('appView');
+  const loginForm = document.getElementById('loginForm');
+  const loginErr = document.getElementById('loginErr');
+  const loginBtn = document.getElementById('loginBtn');
+  const userNameEl = document.getElementById('userName');
   const projList = document.getElementById('projList');
   const amountsInput = document.getElementById('amountsInput');
   const stampEl = document.getElementById('stamp');
@@ -251,6 +293,7 @@
   const toastEl = document.getElementById('toast');
 
   let config = loadConfig();
+  let orders = [];
 
   function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
@@ -297,8 +340,7 @@
 
   function esc(s) {
     return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   function readForm() {
@@ -325,12 +367,11 @@
 
   function saveConfig() {
     const data = readForm();
-    if (!data) return false;
+    if (!data) return;
     config = data;
     localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-    stampEl.textContent = '草稿已保存 ' + timeText(new Date().toISOString());
+    stampEl.textContent = '草稿已保存 ' + timeText(Date.now());
     toast('草稿已保存');
-    return true;
   }
 
   function exportCode() {
@@ -342,10 +383,9 @@
       '  const PROJECTS = ' + projects + ';\n\n' +
       '  const AMOUNTS = ' + JSON.stringify(data.amounts) + ';\n' +
       '  /* ====== 配置区结束 ====== */';
-    copyText(snippet).then(() => toast('配置代码已复制，粘贴到 index.html 配置区'))
-      .catch(() => {
-        window.prompt('复制下面的配置代码，替换 index.html 配置区：', snippet);
-      });
+    copyText(snippet)
+      .then(() => toast('配置代码已复制，粘贴到 index.html 配置区'))
+      .catch(() => window.prompt('复制下面的配置代码，替换 index.html 配置区：', snippet));
   }
 
   function copyText(text) {
@@ -365,78 +405,134 @@
     });
   }
 
+  /* ====== 登录 ====== */
+
+  function showApp() {
+    loginView.hidden = true;
+    appView.hidden = false;
+    userNameEl.textContent = userNameEl.dataset.name || '';
+  }
+
+  function showLogin() {
+    appView.hidden = true;
+    loginView.hidden = false;
+    loginErr.textContent = '';
+    loginBtn.disabled = false;
+  }
+
+  async function api(path, options = {}) {
+    const res = await fetch(path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options
+    });
+    if (res.status === 401) {
+      showLogin();
+      throw new Error('unauthorized');
+    }
+    return res;
+  }
+
+  loginForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    loginErr.textContent = '';
+    loginBtn.disabled = true;
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        loginErr.textContent = data.error || '登录失败，请重试';
+        loginBtn.disabled = false;
+        return;
+      }
+      document.getElementById('password').value = '';
+      userNameEl.dataset.name = data.username;
+      showApp();
+      await loadOrders();
+    } catch (err) {
+      loginErr.textContent = '无法连接服务器';
+      loginBtn.disabled = false;
+    }
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
+    orders = [];
+    renderOrders();
+    showLogin();
+  });
+
   /* ====== 订单记录 ====== */
 
-  function loadOrders() {
+  async function loadOrders() {
     try {
-      const list = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]');
-      return Array.isArray(list) ? list.filter(r => r && r.order) : [];
-    } catch (e) { return []; }
+      const res = await api('/api/orders');
+      const data = await res.json();
+      orders = Array.isArray(data.orders) ? data.orders : [];
+      renderOrders();
+    } catch (e) {
+      /* api() 已处理未登录 */
+    }
   }
 
-  function saveOrders(list) {
-    localStorage.setItem(ORDER_KEY, JSON.stringify(list.slice(0, 200)));
-  }
-
-  function timeText(iso) {
-    const d = new Date(iso);
+  function timeText(ms) {
+    const d = new Date(ms);
     if (isNaN(d)) return '—';
     const p = n => (n < 10 ? '0' + n : '' + n);
     return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' +
       p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
   }
 
-  function inRange(iso, range) {
+  function inRange(ms, range) {
     if (range === 'all') return true;
-    const t = new Date(iso).getTime();
-    if (isNaN(t)) return false;
-    const now = Date.now();
     if (range === 'today') {
       const d = new Date();
       d.setHours(0, 0, 0, 0);
-      return t >= d.getTime();
+      return ms >= d.getTime();
     }
-    if (range === '7d') return t >= now - 7 * 864e5;
-    if (range === '30d') return t >= now - 30 * 864e5;
+    if (range === '7d') return ms >= Date.now() - 7 * 864e5;
+    if (range === '30d') return ms >= Date.now() - 30 * 864e5;
     return true;
   }
 
   function currentRows() {
-    const all = loadOrders();
     const q = searchInput.value.trim().toLowerCase();
     const proj = projectFilter.value;
     const range = timeFilter.value;
-    return all.filter(r =>
+    return orders.filter(r =>
       (!q || String(r.order).toLowerCase().indexOf(q) > -1) &&
       (!proj || r.project === proj) &&
-      inRange(r.at, range)
-    ).sort((a, b) => new Date(b.at) - new Date(a.at));
+      inRange(r.createdMs, range)
+    );
   }
 
   function renderProjectFilter() {
-    const all = loadOrders();
     const names = [];
     config.projects.forEach(p => { if (names.indexOf(p.name) < 0) names.push(p.name); });
-    all.forEach(r => { if (r.project && names.indexOf(r.project) < 0) names.push(r.project); });
+    orders.forEach(r => { if (r.project && names.indexOf(r.project) < 0) names.push(r.project); });
     const cur = projectFilter.value;
     projectFilter.innerHTML = '<option value="">全部项目</option>' +
       names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
     projectFilter.value = names.indexOf(cur) > -1 ? cur : '';
   }
 
-  function renderStats(all) {
-    const sum = all.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  function renderStats() {
+    const sum = orders.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const projects = {};
-    all.forEach(r => { projects[r.project] = 1; });
-    document.getElementById('statCount').innerHTML = all.length + '<small>笔</small>';
+    orders.forEach(r => { projects[r.project] = 1; });
+    document.getElementById('statCount').innerHTML = orders.length + '<small>笔</small>';
     document.getElementById('statSum').textContent = sum.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
     document.getElementById('statProjects').innerHTML = Object.keys(projects).length + '<small>个</small>';
   }
 
   function renderOrders() {
     const rows = currentRows();
-    const all = loadOrders();
-    renderStats(all);
+    renderStats();
     renderProjectFilter();
 
     orderBody.innerHTML = '';
@@ -454,20 +550,20 @@
         '<td class="oid">' + esc(r.order) + '</td>' +
         '<td>' + esc(r.project || '—') + '</td>' +
         '<td class="num">¥' + (Number(r.amount) || 0) + '</td>' +
-        '<td>' + timeText(r.at) + '</td>' +
-        '<td><button class="btn ghost sm" data-order="' + esc(r.order) + '" data-at="' + esc(r.at) + '">删除</button></td>';
+        '<td>' + timeText(r.createdMs) + '</td>' +
+        '<td><button class="btn ghost sm" data-id="' + r.id + '">删除</button></td>';
       orderBody.appendChild(tr);
     });
   }
 
-  function deleteOrder(order, at) {
-    const list = loadOrders();
-    const idx = list.findIndex(r => r.order === order && r.at === at);
-    if (idx < 0) return;
-    list.splice(idx, 1);
-    saveOrders(list);
-    renderOrders();
-    toast('已删除 1 条记录');
+  async function deleteOrder(id) {
+    try {
+      const res = await api('/api/orders/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (!res.ok) { toast('删除失败'); return; }
+      orders = orders.filter(r => r.id !== id);
+      renderOrders();
+      toast('已删除 1 条记录');
+    } catch (e) {}
   }
 
   function exportCsv() {
@@ -475,17 +571,16 @@
     if (!rows.length) { toast('没有可导出的记录'); return; }
     const head = ['订单号', '项目', '金额', '生成时间'];
     const lines = rows.map(r =>
-      [r.order, r.project || '', r.amount, timeText(r.at)]
+      [r.order, r.project || '', r.amount, timeText(r.createdMs)]
         .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
     );
     const csv = '\ufeff' + head.join(',') + '\n' + lines.join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const d = new Date();
     const p = n => (n < 10 ? '0' + n : '' + n);
-    const name = '赞赏订单_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '.csv';
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = name;
+    a.download = '赞赏订单_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -515,16 +610,22 @@
   });
 
   document.getElementById('exportBtn').addEventListener('click', exportCode);
-  document.getElementById('refreshBtn').addEventListener('click', () => { renderOrders(); toast('已刷新'); });
+  document.getElementById('refreshBtn').addEventListener('click', async () => {
+    await loadOrders();
+    toast('已刷新');
+  });
   document.getElementById('csvBtn').addEventListener('click', exportCsv);
 
-  document.getElementById('clearBtn').addEventListener('click', () => {
-    const count = loadOrders().length;
-    if (!count) { toast('当前没有记录'); return; }
-    if (!window.confirm('确定清空全部 ' + count + ' 条本地记录吗？此操作不可撤销。')) return;
-    saveOrders([]);
-    renderOrders();
-    toast('已清空记录');
+  document.getElementById('clearBtn').addEventListener('click', async () => {
+    if (!orders.length) { toast('当前没有记录'); return; }
+    if (!window.confirm('确定清空全部 ' + orders.length + ' 条记录吗？此操作会删除数据库中的数据，不可撤销。')) return;
+    try {
+      const res = await api('/api/orders', { method: 'DELETE' });
+      if (!res.ok) { toast('清空失败'); return; }
+      orders = [];
+      renderOrders();
+      toast('已清空记录');
+    } catch (e) {}
   });
 
   searchInput.addEventListener('input', renderOrders);
@@ -532,19 +633,29 @@
   timeFilter.addEventListener('change', renderOrders);
 
   orderBody.addEventListener('click', e => {
-    const btn = e.target.closest('button[data-order]');
+    const btn = e.target.closest('button[data-id]');
     if (!btn) return;
-    deleteOrder(btn.dataset.order, btn.dataset.at);
+    deleteOrder(Number(btn.dataset.id));
   });
 
-  window.addEventListener('storage', e => {
-    if (e.key === ORDER_KEY) renderOrders();
-  });
+  /* ====== 初始化 ====== */
 
-  /* 初始化 */
   amountsInput.value = config.amounts.join(', ');
   renderProjects();
-  renderOrders();
+
+  (async function init() {
+    try {
+      const res = await fetch('/api/me');
+      if (!res.ok) { showLogin(); return; }
+      const data = await res.json();
+      userNameEl.dataset.name = data.username;
+      showApp();
+      await loadOrders();
+    } catch (e) {
+      showLogin();
+      loginErr.textContent = '无法连接服务器';
+    }
+  })();
 </script>
 </body>
 </html>

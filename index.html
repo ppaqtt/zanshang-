@@ -437,11 +437,14 @@
     return project.prefix + '-' + ts + '-' + rand;
   }
 
-  function saveOrder(record) {
+  function reportOrder(record) {
     try {
-      const list = JSON.parse(localStorage.getItem('zan_orders') || '[]');
-      list.unshift(record);
-      localStorage.setItem('zan_orders', JSON.stringify(list.slice(0, 50)));
+      fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record),
+        keepalive: true
+      }).catch(() => {});
     } catch (e) {}
   }
 
@@ -473,7 +476,7 @@
     orderNoEl.textContent = orderNo;
     copyBtn.textContent = '复制';
     copyBtn.classList.remove('copied');
-    saveOrder({ order: orderNo, project: p.name, amount: amount, at: new Date().toISOString() });
+    reportOrder({ order: orderNo, project: p.name, amount: amount });
 
     qrWrap.innerHTML = '';
 

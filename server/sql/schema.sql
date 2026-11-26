@@ -1,0 +1,27 @@
+CREATE DATABASE IF NOT EXISTS zan
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE zan;
+
+CREATE TABLE IF NOT EXISTS admins (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username VARCHAR(50) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS orders (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  order_no VARCHAR(40) NOT NULL,
+  project VARCHAR(80) NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  ip VARCHAR(45) DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_created (created_at),
+  KEY idx_project (project),
+  KEY idx_order_no (order_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
