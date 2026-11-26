@@ -175,6 +175,9 @@
     border-radius:18px;
     padding:20px 20px 18px;
     position:relative;
+    max-height:calc(100vh - 48px);
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
     transform:translateY(8px);
     transition:transform .2s;
     text-align:center;
@@ -222,6 +225,45 @@
     line-height:1.6;
   }
   .modal-hint b{color:var(--coral-deep);font-weight:600;}
+  .order-box{
+    margin-top:12px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 10px;
+    background:#fbf7f3;
+    border:1px dashed #e7dcd1;
+    border-radius:10px;
+    text-align:left;
+  }
+  .order-box .label{
+    flex:none;
+    font-size:11px;
+    color:#b39c88;
+  }
+  .order-box .no{
+    flex:1;
+    min-width:0;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12px;
+    color:#6b5b4d;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    user-select:text;
+  }
+  .copy-btn{
+    flex:none;
+    border:0;
+    border-radius:6px;
+    background:var(--coral);
+    color:#fff;
+    font-size:11px;
+    padding:5px 10px;
+    font-family:inherit;
+    cursor:pointer;
+  }
+  .copy-btn.copied{background:#8fbf9a;}
   .modal-tip{
     margin:6px 0 0;
     font-size:11px;
@@ -265,8 +307,13 @@
       <button class="modal-close" id="modalClose" aria-label="关闭">×</button>
       <p class="modal-title" id="modalTitle"></p>
       <div class="qr-wrap" id="qrWrap"></div>
+      <div class="order-box">
+        <span class="label">订单号</span>
+        <span class="no" id="orderNo"></span>
+        <button class="copy-btn" id="copyBtn" type="button">复制</button>
+      </div>
       <p class="modal-hint" id="modalHint"></p>
-      <p class="modal-tip">付款页请选择与上方金额一致的赞赏项</p>
+      <p class="modal-tip">付款时把订单号填入「添加备注」，方便核对</p>
       <button class="modal-done" id="modalDone">完成</button>
     </div>
   </div>
@@ -278,6 +325,7 @@
       id: 'qingjian',
       name: '清笺',
       code: 'qingjian',
+      prefix: 'QJ',
       qr: 'assets/qingjian-qr.jpg',
       avatar: 'assets/qingjian-logo.jpg',
       sub: '感谢你的支持与陪伴'
@@ -286,6 +334,7 @@
       id: 'xiaomengjizhang',
       name: '小萌记账',
       code: 'xiaomengjizhang',
+      prefix: 'XM',
       qr: 'assets/xiaomengjizhang-qr.jpg',
       avatar: 'assets/xiaomengjizhang-logo.jpg',
       sub: '感谢你的支持与陪伴'
@@ -294,6 +343,7 @@
       id: 'ppdxpz',
       name: '平平的小破站',
       code: 'ppdxpz',
+      prefix: 'PP',
       qr: 'assets/ppdxpz-qr.jpg',
       avatar: 'assets/ppdxpz-logo.webp',
       sub: '感谢你的支持与陪伴'
@@ -314,6 +364,8 @@
   const modalTitle = document.getElementById('modalTitle');
   const modalHint = document.getElementById('modalHint');
   const qrWrap = document.getElementById('qrWrap');
+  const orderNoEl = document.getElementById('orderNo');
+  const copyBtn = document.getElementById('copyBtn');
 
   function renderTabs() {
     tabsEl.innerHTML = '';
@@ -368,10 +420,54 @@
     }
   }
 
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+  function genOrderNo(project) {
+    const d = new Date();
+    const ts = '' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) +
+      pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
+    const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
+    return project.prefix + '-' + ts + '-' + rand;
+  }
+
+  function saveOrder(record) {
+    try {
+      const list = JSON.parse(localStorage.getItem('zan_orders') || '[]');
+      list.unshift(record);
+      localStorage.setItem('zan_orders', JSON.stringify(list.slice(0, 50)));
+    } catch (e) {}
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise((resolve, reject) => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      ok ? resolve() : reject();
+    });
+  }
+
   function openModal(amount) {
     const p = PROJECTS[currentProject];
     modalTitle.textContent = '向「' + p.name + '」赞赏 ¥' + amount;
     modalHint.innerHTML = '长按识别二维码，在付款页选择「赞赏 ' + amount + 'r」';
+
+    const orderNo = genOrderNo(p);
+    orderNoEl.textContent = orderNo;
+    copyBtn.textContent = '复制';
+    copyBtn.classList.remove('copied');
+    saveOrder({ order: orderNo, project: p.name, amount: amount, at: new Date().toISOString() });
+
     qrWrap.innerHTML = '';
 
     const img = document.createElement('img');
@@ -396,6 +492,20 @@
   document.getElementById('modalDone').addEventListener('click', closeModal);
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  copyBtn.addEventListener('click', () => {
+    copyText(orderNoEl.textContent).then(() => {
+      copyBtn.textContent = '已复制';
+      copyBtn.classList.add('copied');
+      setTimeout(() => {
+        copyBtn.textContent = '复制';
+        copyBtn.classList.remove('copied');
+      }, 1500);
+    }).catch(() => {
+      copyBtn.textContent = '请长按订单号';
+      setTimeout(() => { copyBtn.textContent = '复制'; }, 2000);
+    });
+  });
 
   renderTabs();
   renderGrid();
