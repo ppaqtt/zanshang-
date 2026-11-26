@@ -326,8 +326,8 @@
   </div>
 
 <script>
-  /* ====== 配置区：改这里即可 ====== */
-  const PROJECTS = [
+  /* ====== 默认配置：服务器没有配置时使用，正式配置在管理台维护 ====== */
+  const DEFAULT_PROJECTS = [
     {
       id: 'qingjian',
       name: '清笺',
@@ -357,9 +357,10 @@
     }
   ];
 
-  const AMOUNTS = [1, 5, 10, 20, 50, 100, 500, 666, 888, 1000];
-  /* ====== 配置区结束 ====== */
+  const DEFAULT_AMOUNTS = [1, 5, 10, 20, 50, 100, 500, 666, 888, 1000];
 
+  let PROJECTS = DEFAULT_PROJECTS;
+  let AMOUNTS = DEFAULT_AMOUNTS;
   let currentProject = 0;
   let selectedAmount = null;
 
@@ -517,10 +518,27 @@
     });
   });
 
-  renderTabs();
-  renderGrid();
-  renderAvatar();
-  subtitleEl.textContent = PROJECTS[currentProject].sub;
+  async function loadRemoteConfig() {
+    try {
+      const res = await fetch('/api/config', { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && Array.isArray(data.projects) && data.projects.length &&
+          Array.isArray(data.amounts) && data.amounts.length) {
+        PROJECTS = data.projects;
+        AMOUNTS = data.amounts;
+        currentProject = 0;
+      }
+    } catch (e) { /* 接口不可用时用默认配置 */ }
+  }
+
+  (async function init() {
+    await loadRemoteConfig();
+    renderTabs();
+    renderGrid();
+    renderAvatar();
+    subtitleEl.textContent = PROJECTS[currentProject].sub;
+  })();
 </script>
 </body>
 </html>

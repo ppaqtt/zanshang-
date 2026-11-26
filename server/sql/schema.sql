@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS admins (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
   username VARCHAR(50) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  role ENUM('admin','editor','viewer') NOT NULL DEFAULT 'admin',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_username (username)
@@ -18,10 +19,31 @@ CREATE TABLE IF NOT EXISTS orders (
   order_no VARCHAR(40) NOT NULL,
   project VARCHAR(80) NOT NULL,
   amount DECIMAL(10,2) NOT NULL,
+  status ENUM('pending','paid') NOT NULL DEFAULT 'pending',
+  paid_at DATETIME DEFAULT NULL,
   ip VARCHAR(45) DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_created (created_at),
   KEY idx_project (project),
-  KEY idx_order_no (order_no)
+  KEY idx_order_no (order_no),
+  KEY idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS settings (
+  k VARCHAR(64) NOT NULL,
+  v MEDIUMTEXT NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (k)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  actor VARCHAR(50) DEFAULT NULL,
+  action VARCHAR(40) NOT NULL,
+  detail VARCHAR(500) DEFAULT NULL,
+  ip VARCHAR(45) DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

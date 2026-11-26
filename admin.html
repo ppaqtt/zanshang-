@@ -39,6 +39,15 @@
     padding:8px 14px;border:1px solid #f3d8d1;border-radius:999px;background:#fff7f5;
   }
 
+  .nav{background:#fff;border-bottom:1px solid var(--line);}
+  .nav-inner{max-width:1040px;margin:0 auto;padding:0 12px;display:flex;gap:2px;overflow-x:auto;}
+  .nav button{
+    border:0;background:none;padding:13px 14px;font-size:13px;color:#8a8a8a;
+    cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;
+  }
+  .nav button.active{color:var(--coral-deep);border-bottom-color:var(--coral);font-weight:600;}
+  .nav button:hover{color:#555;}
+
   .wrap{max-width:1040px;margin:0 auto;padding:22px 16px 70px;}
 
   .card{
@@ -58,23 +67,19 @@
 
   .field{display:flex;flex-direction:column;gap:6px;}
   .field label{font-size:12px;color:#8d8d8d;}
-  .field input{
+  .field input,.field select{
     width:100%;border:1px solid #e4e4e6;border-radius:9px;
     padding:9px 11px;font-size:13px;color:var(--ink);background:#fff;
     outline:none;transition:border-color .15s;
   }
-  .field input:focus{border-color:#eaa393;}
+  .field input:focus,.field select:focus{border-color:#eaa393;}
   .field input.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;}
 
   .proj{border:1px solid #f0f0f2;border-radius:12px;padding:14px;margin-bottom:12px;background:#fcfcfd;}
   .proj-grid{display:grid;grid-template-columns:1.2fr .7fr 1.7fr 1.7fr;gap:10px;}
   .proj .field.sub{margin-top:10px;}
-  @media (max-width:860px){
-    .proj-grid{grid-template-columns:1fr 1fr;}
-  }
-  @media (max-width:520px){
-    .proj-grid{grid-template-columns:1fr;}
-  }
+  @media (max-width:860px){ .proj-grid{grid-template-columns:1fr 1fr;} }
+  @media (max-width:520px){ .proj-grid{grid-template-columns:1fr;} }
 
   .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;align-items:center;}
   .btn{
@@ -104,7 +109,7 @@
   .filters input:focus,.filters select:focus{border-color:#eaa393;}
 
   .table-wrap{overflow-x:auto;border:1px solid #f0f0f2;border-radius:12px;}
-  table{width:100%;border-collapse:collapse;min-width:620px;}
+  table{width:100%;border-collapse:collapse;min-width:680px;}
   th,td{padding:11px 14px;text-align:left;font-size:12.5px;white-space:nowrap;}
   th{background:#fafafb;color:#8d8d8d;font-weight:500;font-size:11.5px;letter-spacing:.3px;}
   td{border-top:1px solid #f3f3f5;}
@@ -125,7 +130,28 @@
 
   .foot{text-align:center;font-size:11.5px;color:#b3b3b3;margin-top:26px;line-height:1.9;}
 
-  /* 登录 */
+  .badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;line-height:1.4;}
+  .badge.paid{background:#eaf7ee;color:#2e8b57;}
+  .badge.pending{background:#fff4e5;color:#b7791f;}
+  .badge.role{background:#f2f2f5;color:#666;margin-left:4px;}
+  select.roleSel{border:1px solid #e4e4e6;border-radius:8px;padding:5px 8px;font-size:12px;background:#fff;color:#555;}
+
+  .dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:16px;}
+  .dash-item{border:1px solid #f0f0f2;border-radius:12px;padding:14px;background:#fcfcfd;}
+  .dash-item .k{font-size:11px;color:var(--muted);}
+  .dash-item .v{font-size:22px;font-weight:600;margin-top:6px;color:#3a3a3a;}
+  .dash-item .v small{font-size:12px;font-weight:400;color:var(--muted);margin-left:3px;}
+  .chart-box{margin-top:10px;overflow-x:auto;}
+  .chart-box svg{display:block;width:100%;min-width:520px;height:auto;}
+  .bar-row{display:grid;grid-template-columns:110px 1fr 84px;gap:10px;align-items:center;font-size:12px;margin-top:9px;color:#666;}
+  .bar-track{height:8px;background:#f3f3f5;border-radius:999px;overflow:hidden;}
+  .bar-fill{height:100%;background:linear-gradient(90deg,#ec6a50,#d63f24);border-radius:999px;}
+  .bar-amount{text-align:right;color:#8d8d8d;font-variant-numeric:tabular-nums;}
+
+  .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;font-size:12px;color:var(--muted);}
+  .pager button{border:1px solid #e2e2e4;background:#fff;border-radius:8px;padding:6px 11px;cursor:pointer;font-size:12px;color:#666;}
+  .pager button:disabled{opacity:.45;cursor:not-allowed;}
+
   .login{
     min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
     background:linear-gradient(180deg,#f2f2f5 0%,#e9e9ec 100%);
@@ -141,6 +167,13 @@
   .login-card .btn{width:100%;padding:12px;font-size:14px;margin-top:4px;}
   .login-err{margin:12px 0 0;font-size:12px;color:#c0392b;min-height:16px;text-align:center;}
   .login-back{display:block;text-align:center;margin-top:16px;font-size:12px;color:#b3b3b3;text-decoration:none;}
+
+  .dialog{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:60;}
+  .dialog-card{background:#fff;border-radius:16px;padding:24px;width:100%;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,.2);}
+  .dialog-card h3{margin:0 0 16px;font-size:17px;}
+  .dialog-card .field{margin-bottom:12px;}
+  .dialog-card .row{display:flex;gap:10px;margin-top:6px;}
+  .dialog-card .row .btn{flex:1;}
 </style>
 </head>
 <body>
@@ -171,90 +204,205 @@
     <div class="topbar-inner">
       <div class="logo"><span class="dot"></span>赞赏管理台 <small>数据存于数据库</small></div>
       <div class="top-right">
-        <span class="who">当前账号<b id="userName"></b></span>
+        <span class="who">当前账号<b id="userName"></b><span class="badge role" id="roleBadge"></span></span>
+        <button class="btn ghost sm" id="pwdBtn" type="button">改密码</button>
         <button class="btn ghost sm" id="logoutBtn" type="button">退出</button>
         <a href="index.html">返回赞赏页</a>
       </div>
     </div>
   </div>
 
+  <nav class="nav">
+    <div class="nav-inner">
+      <button data-tab="dashboard" class="active">数据看板</button>
+      <button data-tab="orders">订单记录</button>
+      <button data-tab="config">页面配置</button>
+      <button data-tab="admins" data-role="admin">管理员</button>
+      <button data-tab="logs" data-role="admin">操作日志</button>
+    </div>
+  </nav>
+
   <div class="wrap">
 
-    <section class="card">
-      <div class="card-head">
-        <div>
-          <h2>页面配置</h2>
-          <p>调整金额档位与三个项目的展示信息，改完导出代码，粘贴回 index.html 的配置区。</p>
+    <!-- 数据看板 -->
+    <section class="tab-panel" data-panel="dashboard">
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>数据看板</h2>
+            <p>基于订单记录统计，只代表用户发起过赞赏，不代表实际到账。</p>
+          </div>
+          <button class="btn ghost sm" id="dashRefresh">刷新</button>
         </div>
-      </div>
 
-      <div class="note">
-        配置仍保存在<b>当前浏览器</b>，不走数据库，也不会自动改写线上文件。点「生成配置代码」复制后，替换 index.html 里<b>配置区</b>的内容才会对访客生效。
-      </div>
+        <div class="dash-grid">
+          <div class="dash-item"><div class="k">累计记录</div><div class="v" id="dashCount">0<small>笔</small></div></div>
+          <div class="dash-item"><div class="k">累计金额</div><div class="v">¥<span id="dashSum">0</span></div></div>
+          <div class="dash-item"><div class="k">今日笔数</div><div class="v" id="dashTodayCount">0<small>笔</small></div></div>
+          <div class="dash-item"><div class="k">今日金额</div><div class="v">¥<span id="dashTodaySum">0</span></div></div>
+          <div class="dash-item"><div class="k">已标记到账</div><div class="v">¥<span id="dashPaidSum">0</span></div></div>
+          <div class="dash-item"><div class="k">待核对</div><div class="v" id="dashPending">0<small>笔</small></div></div>
+        </div>
+      </section>
 
-      <div class="field">
-        <label>赞赏金额档位（用逗号分隔，从小到大）</label>
-        <input id="amountsInput" class="mono" placeholder="1, 5, 10, 20, 50, 100, 500, 666, 888, 1000">
-      </div>
+      <section class="card">
+        <div class="card-head"><div><h2>近 14 天金额趋势</h2></div></div>
+        <div class="chart-box" id="chartBox"></div>
+      </section>
 
-      <div id="projList" style="margin-top:16px;"></div>
-
-      <div class="actions">
-        <button class="btn" id="saveBtn">保存草稿</button>
-        <button class="btn ghost" id="resetBtn">恢复页面现有配置</button>
-        <button class="btn ghost" id="exportBtn">生成配置代码</button>
-        <span class="stamp" id="stamp"></span>
-      </div>
+      <section class="card">
+        <div class="card-head"><div><h2>项目分布</h2></div></div>
+        <div id="projectBars"></div>
+      </section>
     </section>
 
-    <section class="card">
-      <div class="card-head">
-        <div>
-          <h2>订单记录</h2>
-          <p>赞赏页每次点开金额弹层都会写入一条记录，数据存在服务器 MySQL，换设备登录也能看到。</p>
+    <!-- 订单 -->
+    <section class="tab-panel" data-panel="orders" hidden>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>订单记录</h2>
+            <p>赞赏页每次点开金额弹层都会写入一条记录，数据存在服务器 MySQL。</p>
+          </div>
+          <button class="btn ghost sm" id="refreshBtn">刷新</button>
         </div>
-        <button class="btn ghost sm" id="refreshBtn">刷新</button>
-      </div>
 
-      <div class="note">
-        这里的记录代表<b>用户发起过赞赏</b>，不代表已经到账。是否真正付款，请以「商家助手」的小票和对账单为准。
-      </div>
-
-      <div class="stats">
-        <div class="stat"><div class="k">记录条数</div><div class="v" id="statCount">0<small>笔</small></div></div>
-        <div class="stat"><div class="k">合计金额</div><div class="v">¥<span id="statSum">0</span></div></div>
-        <div class="stat"><div class="k">涉及项目</div><div class="v" id="statProjects">0<small>个</small></div></div>
-      </div>
-
-      <div class="filters">
-        <input id="searchInput" placeholder="搜索订单号">
-        <select id="projectFilter"><option value="">全部项目</option></select>
-        <select id="timeFilter">
-          <option value="all">全部时间</option>
-          <option value="today">今天</option>
-          <option value="7d">近 7 天</option>
-          <option value="30d">近 30 天</option>
-        </select>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>订单号</th><th>项目</th><th>金额</th><th>生成时间</th><th></th></tr>
-          </thead>
-          <tbody id="orderBody"></tbody>
-        </table>
-        <div class="empty" id="emptyState" hidden>
-          暂无记录
-          <span>先去赞赏页点开任意金额，生成订单号后再回来刷新</span>
+        <div class="note">
+          这里的记录代表<b>用户发起过赞赏</b>，不代表已经到账。可手动标记「已到账」，标记只用于内部核对，不改变任何支付状态。
         </div>
-      </div>
 
-      <div class="actions">
-        <button class="btn ghost" id="csvBtn">导出 CSV</button>
-        <button class="btn danger" id="clearBtn">清空记录</button>
-        <span class="stamp" id="filterStamp"></span>
-      </div>
+        <div class="stats">
+          <div class="stat"><div class="k">记录条数</div><div class="v" id="statCount">0<small>笔</small></div></div>
+          <div class="stat"><div class="k">合计金额</div><div class="v">¥<span id="statSum">0</span></div></div>
+          <div class="stat"><div class="k">涉及项目</div><div class="v" id="statProjects">0<small>个</small></div></div>
+        </div>
+
+        <div class="filters">
+          <input id="searchInput" placeholder="搜索订单号">
+          <select id="projectFilter"><option value="">全部项目</option></select>
+          <select id="statusFilter">
+            <option value="">全部状态</option>
+            <option value="pending">待核对</option>
+            <option value="paid">已到账</option>
+          </select>
+          <select id="timeFilter">
+            <option value="all">全部时间</option>
+            <option value="today">今天</option>
+            <option value="7d">近 7 天</option>
+            <option value="30d">近 30 天</option>
+          </select>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>订单号</th><th>项目</th><th>金额</th><th>状态</th><th>生成时间</th><th></th></tr>
+            </thead>
+            <tbody id="orderBody"></tbody>
+          </table>
+          <div class="empty" id="emptyState" hidden>
+            暂无记录
+            <span>先去赞赏页点开任意金额，生成订单号后再回来刷新</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" id="csvBtn">导出 CSV</button>
+          <button class="btn danger" id="clearBtn" data-role="admin,editor">清空记录</button>
+          <span class="stamp" id="filterStamp"></span>
+        </div>
+      </section>
+    </section>
+
+    <!-- 页面配置 -->
+    <section class="tab-panel" data-panel="config" hidden>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>页面配置</h2>
+            <p>保存后立即写入数据库，赞赏页刷新即可生效，不需要再改代码。</p>
+          </div>
+        </div>
+
+        <div class="note">
+          配置已存入数据库，对所有访客<b>即时生效</b>；图片路径需指向站点内已存在的文件（如 <b>assets/xxx.jpg</b>）。
+        </div>
+
+        <div class="field">
+          <label>赞赏金额档位（用逗号分隔，从小到大）</label>
+          <input id="amountsInput" class="mono" placeholder="1, 5, 10, 20, 50, 100, 500, 666, 888, 1000">
+        </div>
+
+        <div id="projList" style="margin-top:16px;"></div>
+
+        <div class="actions">
+          <button class="btn" id="saveBtn" data-role="admin,editor">保存并发布</button>
+          <button class="btn ghost" id="reloadCfgBtn" data-role="admin,editor">重新读取服务器配置</button>
+          <span class="stamp" id="stamp"></span>
+        </div>
+      </section>
+    </section>
+
+    <!-- 管理员 -->
+    <section class="tab-panel" data-panel="admins" hidden>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>管理员账号</h2>
+            <p>管理员可管理账号和查看日志；编辑可改配置和订单；只读只能查看。</p>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>用户名</th><th>角色</th><th>创建时间</th><th></th></tr></thead>
+            <tbody id="adminBody"></tbody>
+          </table>
+        </div>
+
+        <div class="note" style="margin-top:18px">新建账号</div>
+        <form id="adminForm">
+          <div class="proj-grid" style="grid-template-columns:1fr 1fr 140px;gap:10px">
+            <div class="field"><label>用户名</label><input id="newAdminUser" autocomplete="off" placeholder="3-50 位"></div>
+            <div class="field"><label>密码</label><input id="newAdminPass" type="password" autocomplete="new-password" placeholder="至少 8 位"></div>
+            <div class="field"><label>角色</label>
+              <select id="newAdminRole">
+                <option value="editor">编辑</option>
+                <option value="viewer">只读</option>
+                <option value="admin">管理员</option>
+              </select>
+            </div>
+          </div>
+          <div class="actions"><button class="btn" type="submit">创建账号</button></div>
+        </form>
+      </section>
+    </section>
+
+    <!-- 日志 -->
+    <section class="tab-panel" data-panel="logs" hidden>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>操作日志</h2>
+            <p>记录登录、配置修改、订单操作、账号变更，最多保留全部历史，按时间倒序。</p>
+          </div>
+          <button class="btn ghost sm" id="logRefresh">刷新</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>时间</th><th>账号</th><th>操作</th><th>详情</th><th>IP</th></tr></thead>
+            <tbody id="logBody"></tbody>
+          </table>
+          <div class="empty" id="logEmpty" hidden>暂无日志</div>
+        </div>
+
+        <div class="pager">
+          <span id="logPageInfo"></span>
+          <button id="logPrev">上一页</button>
+          <button id="logNext">下一页</button>
+        </div>
+      </section>
     </section>
 
     <div class="foot">赞赏管理台 · 登录态 7 天有效<br>数据由服务器数据库提供</div>
@@ -263,50 +411,173 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- 修改密码 -->
+<div class="dialog" id="pwdDialog" hidden>
+  <form class="dialog-card" id="pwdForm">
+    <h3>修改我的密码</h3>
+    <div class="field"><label>原密码</label><input id="oldPwd" type="password" autocomplete="current-password"></div>
+    <div class="field"><label>新密码</label><input id="newPwd" type="password" autocomplete="new-password" placeholder="至少 8 位"></div>
+    <div class="field"><label>确认新密码</label><input id="newPwd2" type="password" autocomplete="new-password"></div>
+    <p class="login-err" id="pwdErr"></p>
+    <div class="row">
+      <button class="btn ghost" type="button" id="pwdCancel">取消</button>
+      <button class="btn" type="submit">保存</button>
+    </div>
+  </form>
+</div>
+
 <script>
-  const DEFAULT_CONFIG = {
-    amounts: [1, 5, 10, 20, 50, 100, 500, 666, 888, 1000],
-    projects: [
-      { id:'qingjian', name:'清笺', code:'qingjian', prefix:'QJ', qr:'assets/qingjian-qr.jpg', avatar:'assets/qingjian-logo.jpg', sub:'感谢你的支持与陪伴' },
-      { id:'xiaomengjizhang', name:'小萌记账', code:'xiaomengjizhang', prefix:'XM', qr:'assets/xiaomengjizhang-qr.jpg', avatar:'assets/xiaomengjizhang-logo.jpg', sub:'感谢你的支持与陪伴' },
-      { id:'ppdxpz', name:'平平的小破站', code:'ppdxpz', prefix:'PP', qr:'assets/ppdxpz-qr.jpg', avatar:'assets/ppdxpz-logo.webp', sub:'感谢你的支持与陪伴' }
-    ]
+  const $ = id => document.getElementById(id);
+
+  const ROLE_LABEL = { admin: '管理员', editor: '编辑', viewer: '只读' };
+  const ACTION_LABEL = {
+    login: '登录', login_fail: '登录失败', password_change: '修改密码',
+    config_update: '修改配置', order_status: '订单状态', order_delete: '删除订单',
+    order_clear: '清空订单', admin_create: '创建账号', admin_update: '修改账号',
+    admin_delete: '删除账号'
   };
 
-  const CONFIG_KEY = 'zan_admin_config';
+  const state = {
+    me: null,
+    config: null,
+    orders: [],
+    admins: [],
+    logs: { logs: [], total: 0, page: 1, size: 50 },
+    logPage: 1
+  };
 
-  const loginView = document.getElementById('loginView');
-  const appView = document.getElementById('appView');
-  const loginForm = document.getElementById('loginForm');
-  const loginErr = document.getElementById('loginErr');
-  const loginBtn = document.getElementById('loginBtn');
-  const userNameEl = document.getElementById('userName');
-  const projList = document.getElementById('projList');
-  const amountsInput = document.getElementById('amountsInput');
-  const stampEl = document.getElementById('stamp');
-  const orderBody = document.getElementById('orderBody');
-  const emptyState = document.getElementById('emptyState');
-  const searchInput = document.getElementById('searchInput');
-  const projectFilter = document.getElementById('projectFilter');
-  const timeFilter = document.getElementById('timeFilter');
-  const filterStamp = document.getElementById('filterStamp');
-  const toastEl = document.getElementById('toast');
+  const isAdmin = () => state.me && state.me.role === 'admin';
+  const canEdit = () => state.me && (state.me.role === 'admin' || state.me.role === 'editor');
 
-  let config = loadConfig();
-  let orders = [];
+  /* ---------- 基础 ---------- */
 
-  function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
-
-  function loadConfig() {
-    try {
-      const raw = localStorage.getItem(CONFIG_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.projects) && Array.isArray(parsed.amounts)) return parsed;
-      }
-    } catch (e) {}
-    return clone(DEFAULT_CONFIG);
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+
+  function timeText(ms) {
+    const d = new Date(ms);
+    if (isNaN(d)) return '—';
+    const p = n => (n < 10 ? '0' + n : '' + n);
+    return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' +
+      p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    $('toast').textContent = msg;
+    $('toast').classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2200);
+  }
+
+  async function api(path, options = {}) {
+    const res = await fetch(path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options
+    });
+    if (res.status === 401) {
+      showLogin();
+      throw new Error('unauthorized');
+    }
+    return res;
+  }
+
+  async function apiJson(path, options = {}) {
+    const res = await api(path, options);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || '请求失败');
+    return data;
+  }
+
+  /* ---------- 登录 ---------- */
+
+  function showLogin() {
+    $('appView').hidden = true;
+    $('loginView').hidden = false;
+    $('loginErr').textContent = '';
+    $('loginBtn').disabled = false;
+    state.me = null;
+  }
+
+  function applyRoles() {
+    const role = state.me ? state.me.role : 'viewer';
+    document.querySelectorAll('[data-role]').forEach(el => {
+      const allowed = el.dataset.role.split(',');
+      el.hidden = allowed.indexOf(role) < 0;
+    });
+    document.querySelectorAll('.nav button[data-role]').forEach(el => {
+      el.hidden = el.dataset.role.split(',').indexOf(role) < 0;
+    });
+  }
+
+  async function enterApp() {
+    $('loginView').hidden = true;
+    $('appView').hidden = false;
+    $('userName').textContent = state.me.username;
+    $('roleBadge').textContent = ROLE_LABEL[state.me.role] || state.me.role;
+    applyRoles();
+    switchTab('dashboard');
+    renderOrders();
+    renderDashboard();
+    await Promise.all([loadConfig(), loadOrders()]);
+    if (isAdmin()) {
+      await Promise.all([loadAdmins(), loadLogs(1)]);
+    }
+  }
+
+  $('loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    $('loginErr').textContent = '';
+    $('loginBtn').disabled = true;
+    const username = $('username').value.trim();
+    const password = $('password').value;
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        $('loginErr').textContent = data.error || '登录失败，请重试';
+        $('loginBtn').disabled = false;
+        return;
+      }
+      $('password').value = '';
+      state.me = { username: data.username, role: data.role };
+      await enterApp();
+    } catch (err) {
+      $('loginErr').textContent = '无法连接服务器';
+      $('loginBtn').disabled = false;
+    }
+  });
+
+  $('logoutBtn').addEventListener('click', async () => {
+    try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
+    state.orders = [];
+    state.admins = [];
+    showLogin();
+  });
+
+  /* ---------- 顶部导航 ---------- */
+
+  function switchTab(name) {
+    document.querySelectorAll('.nav button[data-tab]').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === name);
+    });
+    document.querySelectorAll('.tab-panel').forEach(p => {
+      p.hidden = p.dataset.panel !== name;
+    });
+    if (name === 'dashboard') renderDashboard();
+  }
+
+  document.querySelectorAll('.nav button[data-tab]').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  /* ---------- 页面配置 ---------- */
 
   function parseAmounts(str) {
     const nums = String(str).split(/[,，\s]+/).map(Number)
@@ -315,40 +586,53 @@
     return Array.from(new Set(nums)).sort((a, b) => a - b);
   }
 
+  function projField(label, key, value, i, mono) {
+    return '<div class="field"><label>' + label + '</label>' +
+      '<input' + (mono ? ' class="mono"' : '') + ' data-i="' + i + '" data-k="' + key +
+      '" value="' + esc(value) + '"></div>';
+  }
+
   function renderProjects() {
-    projList.innerHTML = '';
-    config.projects.forEach((p, i) => {
+    $('projList').innerHTML = '';
+    (state.config.projects || []).forEach((p, i) => {
       const box = document.createElement('div');
       box.className = 'proj';
       box.innerHTML =
         '<div class="proj-grid">' +
-          field('项目名称', 'name', p.name, i) +
-          field('订单号前缀', 'prefix', p.prefix, i, true) +
-          field('二维码图片路径', 'qr', p.qr, i, true) +
-          field('Logo 图片路径', 'avatar', p.avatar, i, true) +
+          projField('项目名称', 'name', p.name, i) +
+          projField('订单号前缀', 'prefix', p.prefix, i, true) +
+          projField('二维码图片路径', 'qr', p.qr, i, true) +
+          projField('Logo 图片路径', 'avatar', p.avatar, i, true) +
         '</div>' +
         '<div class="field sub"><label>副标题</label>' +
           '<input data-i="' + i + '" data-k="sub" value="' + esc(p.sub || '') + '"></div>';
-      projList.appendChild(box);
+      $('projList').appendChild(box);
     });
   }
 
-  function field(label, key, value, i, mono) {
-    return '<div class="field"><label>' + label + '</label>' +
-      '<input' + (mono ? ' class="mono"' : '') + ' data-i="' + i + '" data-k="' + key + '" value="' + esc(value) + '"></div>';
+  function fillConfigForm() {
+    if (!state.config) return;
+    $('amountsInput').value = (state.config.amounts || []).join(', ');
+    renderProjects();
   }
 
-  function esc(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  async function loadConfig() {
+    try {
+      const res = await fetch('/api/config', { cache: 'no-store' });
+      const data = await res.json();
+      state.config = data;
+      fillConfigForm();
+    } catch (e) {
+      toast('配置读取失败');
+    }
   }
 
-  function readForm() {
-    const amounts = parseAmounts(amountsInput.value);
+  function readConfigForm() {
+    const amounts = parseAmounts($('amountsInput').value);
     if (!amounts.length) { toast('金额档位不能为空'); return null; }
-    const projects = clone(config.projects);
+    const projects = JSON.parse(JSON.stringify(state.config.projects));
     let bad = false;
-    projList.querySelectorAll('input').forEach(inp => {
+    $('projList').querySelectorAll('input').forEach(inp => {
       const i = Number(inp.dataset.i);
       const k = inp.dataset.k;
       const v = inp.value.trim();
@@ -365,127 +649,38 @@
     return { amounts, projects };
   }
 
-  function saveConfig() {
-    const data = readForm();
+  $('saveBtn').addEventListener('click', async () => {
+    const data = readConfigForm();
     if (!data) return;
-    config = data;
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-    stampEl.textContent = '草稿已保存 ' + timeText(Date.now());
-    toast('草稿已保存');
-  }
-
-  function exportCode() {
-    const data = readForm();
-    if (!data) return;
-    const projects = JSON.stringify(data.projects, null, 2).replace(/\n/g, '\n  ');
-    const snippet =
-      '  /* ====== 配置区：改这里即可 ====== */\n' +
-      '  const PROJECTS = ' + projects + ';\n\n' +
-      '  const AMOUNTS = ' + JSON.stringify(data.amounts) + ';\n' +
-      '  /* ====== 配置区结束 ====== */';
-    copyText(snippet)
-      .then(() => toast('配置代码已复制，粘贴到 index.html 配置区'))
-      .catch(() => window.prompt('复制下面的配置代码，替换 index.html 配置区：', snippet));
-  }
-
-  function copyText(text) {
-    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
-    return new Promise((resolve, reject) => {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
-      document.body.appendChild(ta);
-      ta.select();
-      ta.setSelectionRange(0, text.length);
-      let ok = false;
-      try { ok = document.execCommand('copy'); } catch (e) {}
-      document.body.removeChild(ta);
-      ok ? resolve() : reject();
-    });
-  }
-
-  /* ====== 登录 ====== */
-
-  function showApp() {
-    loginView.hidden = true;
-    appView.hidden = false;
-    userNameEl.textContent = userNameEl.dataset.name || '';
-  }
-
-  function showLogin() {
-    appView.hidden = true;
-    loginView.hidden = false;
-    loginErr.textContent = '';
-    loginBtn.disabled = false;
-  }
-
-  async function api(path, options = {}) {
-    const res = await fetch(path, {
-      headers: { 'Content-Type': 'application/json' },
-      ...options
-    });
-    if (res.status === 401) {
-      showLogin();
-      throw new Error('unauthorized');
-    }
-    return res;
-  }
-
-  loginForm.addEventListener('submit', async e => {
-    e.preventDefault();
-    loginErr.textContent = '';
-    loginBtn.disabled = true;
-    const username = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value;
+    $('saveBtn').disabled = true;
     try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        loginErr.textContent = data.error || '登录失败，请重试';
-        loginBtn.disabled = false;
-        return;
-      }
-      document.getElementById('password').value = '';
-      userNameEl.dataset.name = data.username;
-      showApp();
-      await loadOrders();
-    } catch (err) {
-      loginErr.textContent = '无法连接服务器';
-      loginBtn.disabled = false;
+      const res = await apiJson('/api/config', { method: 'PUT', body: JSON.stringify(data) });
+      state.config = res.config;
+      fillConfigForm();
+      $('stamp').textContent = '已发布 ' + timeText(Date.now());
+      toast('配置已保存，对所有访客立即生效');
+      renderDashboard();
+    } catch (e) {
+      toast(e.message || '保存失败');
+    } finally {
+      $('saveBtn').disabled = false;
     }
   });
 
-  document.getElementById('logoutBtn').addEventListener('click', async () => {
-    try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
-    orders = [];
-    renderOrders();
-    showLogin();
+  $('reloadCfgBtn').addEventListener('click', async () => {
+    await loadConfig();
+    toast('已重新读取服务器配置');
   });
 
-  /* ====== 订单记录 ====== */
+  /* ---------- 订单 ---------- */
 
   async function loadOrders() {
     try {
-      const res = await api('/api/orders');
-      const data = await res.json();
-      orders = Array.isArray(data.orders) ? data.orders : [];
+      const data = await apiJson('/api/orders');
+      state.orders = Array.isArray(data.orders) ? data.orders : [];
       renderOrders();
-    } catch (e) {
-      /* api() 已处理未登录 */
-    }
-  }
-
-  function timeText(ms) {
-    const d = new Date(ms);
-    if (isNaN(d)) return '—';
-    const p = n => (n < 10 ? '0' + n : '' + n);
-    return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' +
-      p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+      renderDashboard();
+    } catch (e) { /* 401 已处理 */ }
   }
 
   function inRange(ms, range) {
@@ -501,33 +696,43 @@
   }
 
   function currentRows() {
-    const q = searchInput.value.trim().toLowerCase();
-    const proj = projectFilter.value;
-    const range = timeFilter.value;
-    return orders.filter(r =>
+    const q = $('searchInput').value.trim().toLowerCase();
+    const proj = $('projectFilter').value;
+    const status = $('statusFilter').value;
+    const range = $('timeFilter').value;
+    return state.orders.filter(r =>
       (!q || String(r.order).toLowerCase().indexOf(q) > -1) &&
       (!proj || r.project === proj) &&
+      (!status || r.status === status) &&
       inRange(r.createdMs, range)
     );
   }
 
   function renderProjectFilter() {
     const names = [];
-    config.projects.forEach(p => { if (names.indexOf(p.name) < 0) names.push(p.name); });
-    orders.forEach(r => { if (r.project && names.indexOf(r.project) < 0) names.push(r.project); });
-    const cur = projectFilter.value;
-    projectFilter.innerHTML = '<option value="">全部项目</option>' +
+    ((state.config && state.config.projects) || []).forEach(p => {
+      if (names.indexOf(p.name) < 0) names.push(p.name);
+    });
+    state.orders.forEach(r => { if (r.project && names.indexOf(r.project) < 0) names.push(r.project); });
+    const cur = $('projectFilter').value;
+    $('projectFilter').innerHTML = '<option value="">全部项目</option>' +
       names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
-    projectFilter.value = names.indexOf(cur) > -1 ? cur : '';
+    $('projectFilter').value = names.indexOf(cur) > -1 ? cur : '';
+  }
+
+  function statusBadge(s) {
+    return s === 'paid'
+      ? '<span class="badge paid">已到账</span>'
+      : '<span class="badge pending">待核对</span>';
   }
 
   function renderStats() {
-    const sum = orders.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const sum = state.orders.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const projects = {};
-    orders.forEach(r => { projects[r.project] = 1; });
-    document.getElementById('statCount').innerHTML = orders.length + '<small>笔</small>';
-    document.getElementById('statSum').textContent = sum.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-    document.getElementById('statProjects').innerHTML = Object.keys(projects).length + '<small>个</small>';
+    state.orders.forEach(r => { projects[r.project] = 1; });
+    $('statCount').innerHTML = state.orders.length + '<small>笔</small>';
+    $('statSum').textContent = sum.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+    $('statProjects').innerHTML = Object.keys(projects).length + '<small>个</small>';
   }
 
   function renderOrders() {
@@ -535,43 +740,70 @@
     renderStats();
     renderProjectFilter();
 
-    orderBody.innerHTML = '';
+    const body = $('orderBody');
+    body.innerHTML = '';
     if (!rows.length) {
-      emptyState.hidden = false;
-      filterStamp.textContent = '';
+      $('emptyState').hidden = false;
+      $('filterStamp').textContent = '';
       return;
     }
-    emptyState.hidden = true;
-    filterStamp.textContent = '当前筛选 ' + rows.length + ' 笔';
+    $('emptyState').hidden = true;
+    $('filterStamp').textContent = '当前筛选 ' + rows.length + ' 笔';
 
     rows.forEach(r => {
       const tr = document.createElement('tr');
+      const actions = canEdit()
+        ? '<button class="btn ghost sm" data-act="status" data-id="' + r.id + '">' +
+            (r.status === 'paid' ? '取消到账' : '标记到账') + '</button> ' +
+          '<button class="btn ghost sm" data-act="del" data-id="' + r.id + '">删除</button>'
+        : '';
       tr.innerHTML =
         '<td class="oid">' + esc(r.order) + '</td>' +
         '<td>' + esc(r.project || '—') + '</td>' +
         '<td class="num">¥' + (Number(r.amount) || 0) + '</td>' +
+        '<td>' + statusBadge(r.status) + '</td>' +
         '<td>' + timeText(r.createdMs) + '</td>' +
-        '<td><button class="btn ghost sm" data-id="' + r.id + '">删除</button></td>';
-      orderBody.appendChild(tr);
+        '<td>' + actions + '</td>';
+      body.appendChild(tr);
     });
   }
 
-  async function deleteOrder(id) {
+  async function toggleStatus(id) {
+    const order = state.orders.find(o => o.id === id);
+    if (!order) return;
+    const next = order.status === 'paid' ? 'pending' : 'paid';
     try {
-      const res = await api('/api/orders/' + encodeURIComponent(id), { method: 'DELETE' });
-      if (!res.ok) { toast('删除失败'); return; }
-      orders = orders.filter(r => r.id !== id);
+      await apiJson('/api/orders/' + id, { method: 'PATCH', body: JSON.stringify({ status: next }) });
+      order.status = next;
+      order.paidMs = next === 'paid' ? Date.now() : null;
       renderOrders();
+      renderDashboard();
+      toast(next === 'paid' ? '已标记为到账' : '已取消到账标记');
+    } catch (e) {
+      toast(e.message || '更新失败');
+    }
+  }
+
+  async function deleteOrder(id) {
+    if (!window.confirm('确定删除这条记录吗？删除后无法恢复。')) return;
+    try {
+      await apiJson('/api/orders/' + id, { method: 'DELETE' });
+      state.orders = state.orders.filter(r => r.id !== id);
+      renderOrders();
+      renderDashboard();
       toast('已删除 1 条记录');
-    } catch (e) {}
+    } catch (e) {
+      toast(e.message || '删除失败');
+    }
   }
 
   function exportCsv() {
     const rows = currentRows();
     if (!rows.length) { toast('没有可导出的记录'); return; }
-    const head = ['订单号', '项目', '金额', '生成时间'];
+    const head = ['订单号', '项目', '金额', '状态', '生成时间', '到账时间'];
     const lines = rows.map(r =>
-      [r.order, r.project || '', r.amount, timeText(r.createdMs)]
+      [r.order, r.project || '', r.amount, r.status === 'paid' ? '已到账' : '待核对',
+        timeText(r.createdMs), r.paidMs ? timeText(r.paidMs) : '']
         .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
     );
     const csv = '\ufeff' + head.join(',') + '\n' + lines.join('\n');
@@ -588,72 +820,305 @@
     toast('已导出 ' + rows.length + ' 条记录');
   }
 
-  let toastTimer = null;
-  function toast(msg) {
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2000);
+  /* ---------- 数据看板 ---------- */
+
+  function renderDashboard() {
+    const orders = state.orders || [];
+    let sum = 0, paidSum = 0, pending = 0;
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    let todayCount = 0, todaySum = 0;
+
+    orders.forEach(o => {
+      const amt = Number(o.amount) || 0;
+      sum += amt;
+      if (o.status === 'paid') paidSum += amt; else pending += 1;
+      if (o.createdMs >= todayStart.getTime()) { todayCount += 1; todaySum += amt; }
+    });
+
+    $('dashCount').innerHTML = orders.length + '<small>笔</small>';
+    $('dashSum').textContent = sum.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+    $('dashTodayCount').innerHTML = todayCount + '<small>笔</small>';
+    $('dashTodaySum').textContent = todaySum.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+    $('dashPaidSum').textContent = paidSum.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+    $('dashPending').innerHTML = pending + '<small>笔</small>';
+
+    renderChart(orders);
+    renderProjectBars(orders);
   }
 
-  /* ====== 事件 ====== */
+  function renderChart(orders) {
+    const days = 14;
+    const base = new Date(); base.setHours(0, 0, 0, 0);
+    const buckets = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const start = base.getTime() - i * 864e5;
+      const d = new Date(start);
+      buckets.push({ label: (d.getMonth() + 1) + '/' + d.getDate(), start, end: start + 864e5, v: 0 });
+    }
+    orders.forEach(o => {
+      const b = buckets.find(x => o.createdMs >= x.start && o.createdMs < x.end);
+      if (b) b.v += Number(o.amount) || 0;
+    });
 
-  document.getElementById('saveBtn').addEventListener('click', saveConfig);
+    const max = Math.max(1, ...buckets.map(b => b.v));
+    const W = 700, H = 190, left = 34, right = 12, top = 16, bottom = 28;
+    const plotW = W - left - right, plotH = H - top - bottom;
+    const step = plotW / days;
+    const barW = Math.max(8, step * 0.55);
 
-  document.getElementById('resetBtn').addEventListener('click', () => {
-    config = clone(DEFAULT_CONFIG);
-    amountsInput.value = config.amounts.join(', ');
-    renderProjects();
-    localStorage.removeItem(CONFIG_KEY);
-    stampEl.textContent = '';
-    toast('已恢复为页面现有配置');
-  });
+    let bars = '';
+    buckets.forEach((b, i) => {
+      const h = b.v > 0 ? Math.max(3, (b.v / max) * plotH) : 0;
+      const x = left + i * step + (step - barW) / 2;
+      const y = top + plotH - h;
+      bars += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) +
+        '" height="' + h.toFixed(1) + '" rx="3" fill="#ec6a50"></rect>';
+      if (h > 0) {
+        bars += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (y - 5).toFixed(1) +
+          '" font-size="9" fill="#b06a58" text-anchor="middle">' + (b.v >= 1000 ? Math.round(b.v) : b.v) + '</text>';
+      }
+      bars += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (H - 8) +
+        '" font-size="9" fill="#b3b3b3" text-anchor="middle">' + b.label + '</text>';
+    });
 
-  document.getElementById('exportBtn').addEventListener('click', exportCode);
-  document.getElementById('refreshBtn').addEventListener('click', async () => {
-    await loadOrders();
-    toast('已刷新');
-  });
-  document.getElementById('csvBtn').addEventListener('click', exportCsv);
+    const grid = [0, 0.5, 1].map(p => {
+      const y = top + plotH - p * plotH;
+      const v = Math.round(max * p);
+      return '<line x1="' + left + '" y1="' + y + '" x2="' + (W - right) + '" y2="' + y +
+        '" stroke="#f1f1f3"></line>' +
+        '<text x="' + (left - 6) + '" y="' + (y + 3) + '" font-size="9" fill="#b3b3b3" text-anchor="end">' + v + '</text>';
+    }).join('');
 
-  document.getElementById('clearBtn').addEventListener('click', async () => {
-    if (!orders.length) { toast('当前没有记录'); return; }
-    if (!window.confirm('确定清空全部 ' + orders.length + ' 条记录吗？此操作会删除数据库中的数据，不可撤销。')) return;
+    $('chartBox').innerHTML =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="近 14 天金额趋势">' +
+      grid + bars + '</svg>';
+  }
+
+  function renderProjectBars(orders) {
+    const map = new Map();
+    orders.forEach(o => {
+      const k = o.project || '未标注';
+      map.set(k, (map.get(k) || 0) + (Number(o.amount) || 0));
+    });
+    const arr = Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+    if (!arr.length) {
+      $('projectBars').innerHTML = '<p style="color:#b5b5b5;font-size:13px;margin:8px 0">暂无数据</p>';
+      return;
+    }
+    const max = Math.max(1, ...arr.map(x => x[1]));
+    $('projectBars').innerHTML = arr.map(([name, v]) =>
+      '<div class="bar-row"><span>' + esc(name) + '</span>' +
+      '<span class="bar-track"><span class="bar-fill" style="width:' +
+      Math.max(2, (v / max) * 100).toFixed(1) + '%"></span></span>' +
+      '<span class="bar-amount">¥' + v.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</span></div>'
+    ).join('');
+  }
+
+  /* ---------- 管理员 ---------- */
+
+  async function loadAdmins() {
     try {
-      const res = await api('/api/orders', { method: 'DELETE' });
-      if (!res.ok) { toast('清空失败'); return; }
-      orders = [];
-      renderOrders();
-      toast('已清空记录');
+      const data = await apiJson('/api/admins');
+      state.admins = data.admins || [];
+      renderAdmins();
     } catch (e) {}
+  }
+
+  function renderAdmins() {
+    const body = $('adminBody');
+    body.innerHTML = '';
+    state.admins.forEach(a => {
+      const isSelf = state.me && a.username === state.me.username;
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + esc(a.username) + (isSelf ? ' <span style="color:#b3b3b3;font-size:11px">（我）</span>' : '') + '</td>' +
+        '<td><select data-id="' + a.id + '" class="roleSel"' + (isSelf ? ' disabled' : '') + '>' +
+          ['admin', 'editor', 'viewer'].map(r =>
+            '<option value="' + r + '"' + (a.role === r ? ' selected' : '') + '>' + ROLE_LABEL[r] + '</option>'
+          ).join('') +
+        '</select></td>' +
+        '<td>' + timeText(a.createdMs) + '</td>' +
+        '<td><button class="btn ghost sm" data-reset="' + a.id + '">重置密码</button> ' +
+        (isSelf ? '' : '<button class="btn ghost sm" data-del="' + a.id + '">删除</button>') + '</td>';
+      body.appendChild(tr);
+    });
+  }
+
+  $('adminForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const username = $('newAdminUser').value.trim();
+    const password = $('newAdminPass').value;
+    const role = $('newAdminRole').value;
+    try {
+      await apiJson('/api/admins', {
+        method: 'POST',
+        body: JSON.stringify({ username, password, role })
+      });
+      $('newAdminUser').value = '';
+      $('newAdminPass').value = '';
+      await loadAdmins();
+      toast('账号已创建');
+    } catch (err) {
+      toast(err.message || '创建失败');
+    }
   });
 
-  searchInput.addEventListener('input', renderOrders);
-  projectFilter.addEventListener('change', renderOrders);
-  timeFilter.addEventListener('change', renderOrders);
+  $('adminBody').addEventListener('change', async e => {
+    const sel = e.target.closest('select.roleSel');
+    if (!sel) return;
+    try {
+      await apiJson('/api/admins/' + sel.dataset.id, {
+        method: 'PATCH', body: JSON.stringify({ role: sel.value })
+      });
+      await loadAdmins();
+      toast('角色已更新');
+    } catch (err) {
+      toast(err.message || '更新失败');
+      await loadAdmins();
+    }
+  });
 
-  orderBody.addEventListener('click', e => {
-    const btn = e.target.closest('button[data-id]');
+  $('adminBody').addEventListener('click', async e => {
+    const reset = e.target.closest('button[data-reset]');
+    const del = e.target.closest('button[data-del]');
+    if (reset) {
+      const pwd = window.prompt('输入新密码（至少 8 位）：');
+      if (!pwd) return;
+      try {
+        await apiJson('/api/admins/' + reset.dataset.reset, {
+          method: 'PATCH', body: JSON.stringify({ password: pwd })
+        });
+        toast('密码已重置');
+      } catch (err) { toast(err.message || '重置失败'); }
+    }
+    if (del) {
+      if (!window.confirm('确定删除这个账号吗？')) return;
+      try {
+        await apiJson('/api/admins/' + del.dataset.del, { method: 'DELETE' });
+        await loadAdmins();
+        toast('账号已删除');
+      } catch (err) { toast(err.message || '删除失败'); }
+    }
+  });
+
+  /* ---------- 日志 ---------- */
+
+  async function loadLogs(page) {
+    try {
+      const data = await apiJson('/api/logs?page=' + (page || 1));
+      state.logs = data;
+      renderLogs();
+    } catch (e) {}
+  }
+
+  function renderLogs() {
+    const { logs, total, page, size } = state.logs;
+    const body = $('logBody');
+    body.innerHTML = '';
+    $('logEmpty').hidden = logs.length > 0;
+
+    logs.forEach(l => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + timeText(l.createdMs) + '</td>' +
+        '<td>' + esc(l.actor || '—') + '</td>' +
+        '<td>' + esc(ACTION_LABEL[l.action] || l.action) + '</td>' +
+        '<td style="white-space:normal;max-width:300px">' + esc(l.detail || '') + '</td>' +
+        '<td>' + esc(l.ip || '—') + '</td>';
+      body.appendChild(tr);
+    });
+
+    const pages = Math.max(1, Math.ceil(total / size));
+    $('logPageInfo').textContent = '共 ' + total + ' 条 · 第 ' + page + '/' + pages + ' 页';
+    $('logPrev').disabled = page <= 1;
+    $('logNext').disabled = page >= pages;
+    state.logPage = page;
+  }
+
+  $('logPrev').addEventListener('click', () => loadLogs(state.logPage - 1));
+  $('logNext').addEventListener('click', () => loadLogs(state.logPage + 1));
+  $('logRefresh').addEventListener('click', () => loadLogs(state.logPage));
+
+  /* ---------- 修改自己的密码 ---------- */
+
+  $('pwdBtn').addEventListener('click', () => {
+    $('pwdErr').textContent = '';
+    $('oldPwd').value = '';
+    $('newPwd').value = '';
+    $('newPwd2').value = '';
+    $('pwdDialog').hidden = false;
+  });
+
+  $('pwdCancel').addEventListener('click', () => { $('pwdDialog').hidden = true; });
+
+  $('pwdDialog').addEventListener('click', e => {
+    if (e.target === $('pwdDialog')) $('pwdDialog').hidden = true;
+  });
+
+  $('pwdForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const oldPassword = $('oldPwd').value;
+    const np = $('newPwd').value;
+    if (np !== $('newPwd2').value) { $('pwdErr').textContent = '两次输入的新密码不一致'; return; }
+    try {
+      await apiJson('/api/me/password', {
+        method: 'POST',
+        body: JSON.stringify({ oldPassword, newPassword: np })
+      });
+      $('pwdDialog').hidden = true;
+      toast('密码已修改');
+    } catch (err) {
+      $('pwdErr').textContent = err.message || '修改失败';
+    }
+  });
+
+  /* ---------- 事件绑定 ---------- */
+
+  $('dashRefresh').addEventListener('click', async () => { await loadOrders(); toast('已刷新'); });
+  $('refreshBtn').addEventListener('click', async () => { await loadOrders(); toast('已刷新'); });
+  $('csvBtn').addEventListener('click', exportCsv);
+
+  $('clearBtn').addEventListener('click', async () => {
+    if (!state.orders.length) { toast('当前没有记录'); return; }
+    if (!window.confirm('确定清空全部 ' + state.orders.length + ' 条记录吗？此操作会删除数据库中的数据，不可撤销。')) return;
+    try {
+      await apiJson('/api/orders', { method: 'DELETE' });
+      state.orders = [];
+      renderOrders();
+      renderDashboard();
+      toast('已清空记录');
+    } catch (e) { toast(e.message || '清空失败'); }
+  });
+
+  $('searchInput').addEventListener('input', renderOrders);
+  $('projectFilter').addEventListener('change', renderOrders);
+  $('statusFilter').addEventListener('change', renderOrders);
+  $('timeFilter').addEventListener('change', renderOrders);
+
+  $('orderBody').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-act]');
     if (!btn) return;
-    deleteOrder(Number(btn.dataset.id));
+    const id = Number(btn.dataset.id);
+    if (btn.dataset.act === 'status') toggleStatus(id);
+    if (btn.dataset.act === 'del') deleteOrder(id);
   });
 
-  /* ====== 初始化 ====== */
+  /* ---------- 初始化 ---------- */
 
-  amountsInput.value = config.amounts.join(', ');
-  renderProjects();
+  fillConfigForm();
+  renderOrders();
+  renderDashboard();
 
   (async function init() {
     try {
       const res = await fetch('/api/me');
       if (!res.ok) { showLogin(); return; }
       const data = await res.json();
-      userNameEl.dataset.name = data.username;
-      showApp();
-      await loadOrders();
+      state.me = { username: data.username, role: data.role };
+      await enterApp();
     } catch (e) {
       showLogin();
-      loginErr.textContent = '无法连接服务器';
+      $('loginErr').textContent = '无法连接服务器';
     }
   })();
 </script>
