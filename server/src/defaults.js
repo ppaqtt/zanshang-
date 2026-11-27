@@ -29,7 +29,7 @@ export const DEFAULT_CONFIG = {
       id: 'ppdxpz',
       name: '平平的小破站',
       code: 'ppdxpz',
-      prefix: 'PP',
+      prefix: 'PPDXPZ',
       qr: 'assets/ppdxpz-qr.jpg',
       avatar: 'assets/ppdxpz-logo.webp',
       sub: '感谢你的支持与陪伴'

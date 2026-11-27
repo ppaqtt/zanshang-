@@ -702,14 +702,14 @@
       const v = inp.value.trim();
       if (k === 'prefix') {
         const up = v.toUpperCase();
-        if (!/^[A-Z]{1,4}$/.test(up)) bad = true;
+        if (!/^[A-Z]{1,10}$/.test(up)) bad = true;
         projects[i][k] = up;
       } else {
         projects[i][k] = v;
       }
       if (!v) bad = true;
     });
-    if (bad) { toast('名称、前缀、图片路径都不能为空，前缀用 1-4 个字母'); return null; }
+    if (bad) { toast('名称、前缀、图片路径都不能为空，前缀用 1-10 个字母'); return null; }
 
     const theme = {
       accent: String($('accentInput').value || '').toUpperCase(),

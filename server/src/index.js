@@ -129,13 +129,13 @@ function validateConfig(body) {
     const name = safeStr(p && p.name, 40);
     const id = safeStr(p && p.id, 40);
     const code = safeStr(p && p.code, 40);
-    const prefix = safeStr(p && p.prefix, 4);
+    const prefix = safeStr(p && p.prefix, 10);
     const qr = safeAsset(p && p.qr);
     const avatar = safeAsset(p && p.avatar);
     const sub = safeStr(p && p.sub, 60);
     if (!name || !id || !code || !prefix || !qr || !avatar || !sub) return null;
     if (!/^[A-Za-z0-9_-]+$/.test(id) || !/^[A-Za-z0-9_-]+$/.test(code)) return null;
-    if (!/^[A-Z]{1,4}$/.test(prefix.toUpperCase())) return null;
+    if (!/^[A-Z]{1,10}$/.test(prefix.toUpperCase())) return null;
     projects.push({ id, name, code, prefix: prefix.toUpperCase(), qr, avatar, sub });
   }
   return { amounts, theme, projects };
