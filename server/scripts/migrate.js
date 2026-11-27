@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import mysql from 'mysql2/promise';
 import { pool } from '../src/db.js';
 import { DEFAULT_CONFIG, DEFAULT_NOTIFY, DEFAULT_BACKUP, SKIN_KEYS } from '../src/defaults.js';
 
@@ -9,15 +10,6 @@ async function columnExists(table, column) {
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
      LIMIT 1`,
     [table, column]
-  );
-  return rows.length > 0;
-}
-
-async function tableExists(table) {
-  const [rows] = await pool.query(
-    `SELECT 1 FROM information_schema.TABLES
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`,
-    [table]
   );
   return rows.length > 0;
 }
@@ -43,24 +35,73 @@ async function addColumn(table, column, ddl) {
 async function main() {
   console.log('[migrate] 开始升级数据库…');
 
-  if (await tableExists('admins')) {
-    await addColumn('admins', 'role',
-      "ALTER TABLE admins ADD COLUMN role ENUM('admin','editor','viewer') NOT NULL DEFAULT 'admin' AFTER password_hash");
+  /* 全新环境：库还不存在时先建库，否则连接池第一句就会失败 */
+  const dbName = process.env.DB_NAME || 'zan';
+  const boot = await mysql.createConnection({
+    host: process.env.DB_HOST || '127.0.0.1',
+    port: Number(process.env.DB_PORT || 3306),
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || ''
+  });
+  try {
+    await boot.query(
+      `CREATE DATABASE IF NOT EXISTS \`${dbName}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+    );
+    console.log('  = 数据库 ' + dbName + ' 就绪');
+  } catch (e) {
+    console.log('  ! 建库跳过（' + e.message + '），继续尝试连接现有库');
+  } finally {
+    await boot.end();
   }
 
-  if (await tableExists('orders')) {
-    await addColumn('orders', 'status',
-      "ALTER TABLE orders ADD COLUMN status ENUM('pending','paid') NOT NULL DEFAULT 'pending' AFTER amount");
-    await addColumn('orders', 'paid_at',
-      'ALTER TABLE orders ADD COLUMN paid_at DATETIME NULL AFTER status');
-    await addColumn('orders', 'note',
-      'ALTER TABLE orders ADD COLUMN note VARCHAR(200) NULL AFTER paid_at');
-    await addColumn('orders', 'source',
-      'ALTER TABLE orders ADD COLUMN source VARCHAR(60) NULL AFTER note');
-    if (!(await indexExists('orders', 'idx_status'))) {
-      await pool.query('ALTER TABLE orders ADD INDEX idx_status (status)');
-      console.log('  + orders.idx_status 已添加');
-    }
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS admins (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      username VARCHAR(50) NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      role ENUM('admin','editor','viewer') NOT NULL DEFAULT 'admin',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uk_username (username)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+  console.log('  = admins 表就绪');
+
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS orders (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      order_no VARCHAR(40) NOT NULL,
+      project VARCHAR(80) NOT NULL,
+      amount DECIMAL(10,2) NOT NULL,
+      status ENUM('pending','paid') NOT NULL DEFAULT 'pending',
+      paid_at DATETIME DEFAULT NULL,
+      note VARCHAR(200) DEFAULT NULL,
+      source VARCHAR(60) DEFAULT NULL,
+      ip VARCHAR(45) DEFAULT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_created (created_at),
+      KEY idx_project (project),
+      KEY idx_order_no (order_no),
+      KEY idx_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+  console.log('  = orders 表就绪');
+
+  /* 老库补列（新库已由上面的建表覆盖，这里是幂等空操作） */
+  await addColumn('admins', 'role',
+    "ALTER TABLE admins ADD COLUMN role ENUM('admin','editor','viewer') NOT NULL DEFAULT 'admin' AFTER password_hash");
+  await addColumn('orders', 'status',
+    "ALTER TABLE orders ADD COLUMN status ENUM('pending','paid') NOT NULL DEFAULT 'pending' AFTER amount");
+  await addColumn('orders', 'paid_at',
+    'ALTER TABLE orders ADD COLUMN paid_at DATETIME NULL AFTER status');
+  await addColumn('orders', 'note',
+    'ALTER TABLE orders ADD COLUMN note VARCHAR(200) NULL AFTER paid_at');
+  await addColumn('orders', 'source',
+    'ALTER TABLE orders ADD COLUMN source VARCHAR(60) NULL AFTER note');
+  if (!(await indexExists('orders', 'idx_status'))) {
+    await pool.query('ALTER TABLE orders ADD INDEX idx_status (status)');
+    console.log('  + orders.idx_status 已添加');
   }
 
   await pool.query(
