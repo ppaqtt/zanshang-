@@ -288,6 +288,14 @@
     cursor:pointer;
     font-family:inherit;
   }
+  /* 皮肤：暗色覆盖 */
+  body.skin-night .phone{background:#23232f;}
+  body.skin-night .amt{background:#2a2a38;}
+  body.skin-night .modal-card{background:#2a2a38;}
+  body.skin-night .qr-wrap{background:#2a2a38;}
+  body.skin-night .modal-title{color:#e8e8f0;}
+  body.skin-night .note{color:#7a7a8c;}
+  body.skin-night .avatar{border-color:#2a2a38;}
 </style>
 </head>
 <body>
@@ -470,13 +478,27 @@
     return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
   }
 
+  const SKINS = {
+    coral:  { accent:'#E4573D', bg:'#e9e9ec', ink:'#2b2b2b', muted:'#9a9a9a', line:'#ececec' },
+    forest: { accent:'#2E7D5B', bg:'#e8efe9', ink:'#1f3a2c', muted:'#7a8a80', line:'#e3ece5' },
+    sunset: { accent:'#FF7A45', bg:'#fdf0e6', ink:'#3a2a1f', muted:'#b09a88', line:'#f5e3d3' },
+    mint:   { accent:'#16A085', bg:'#e6f4f1', ink:'#14302a', muted:'#7a9a92', line:'#d4e8e3' },
+    night:  { accent:'#6C5CE7', bg:'#15151f', ink:'#e8e8f0', muted:'#8a8aa0', line:'#2e2e3d' }
+  };
+
   function applyTheme(t) {
     if (!t) return;
-    if (/^#[0-9A-Fa-f]{6}$/.test(t.accent || '')) {
-      const root = document.documentElement.style;
-      root.setProperty('--coral', t.accent.toUpperCase());
-      root.setProperty('--coral-deep', shade(t.accent, -12));
-    }
+    const root = document.documentElement.style;
+    const skin = SKINS[t.skin] ? t.skin : 'coral';
+    const s = SKINS[skin];
+    root.setProperty('--ink', s.ink);
+    root.setProperty('--muted', s.muted);
+    root.setProperty('--line', s.line);
+    document.body.className = 'skin-' + skin;
+    document.body.style.background = s.bg;
+    const accent = /^#[0-9A-Fa-f]{6}$/.test(t.accent || '') ? t.accent.toUpperCase() : s.accent;
+    root.setProperty('--coral', accent);
+    root.setProperty('--coral-deep', shade(accent, -12));
     if (t.title) document.getElementById('brandTitle').textContent = t.title;
     if (t.pageTitle) document.title = t.pageTitle;
     if (t.footer) document.getElementById('pageNote').textContent = t.footer;

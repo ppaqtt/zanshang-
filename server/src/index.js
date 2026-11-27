@@ -5,10 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
-import { DEFAULT_CONFIG, DEFAULT_NOTIFY, NOTIFY_TYPES, ROLES } from './defaults.js';
+import { DEFAULT_CONFIG, DEFAULT_NOTIFY, NOTIFY_TYPES, ROLES, SKIN_KEYS, DEFAULT_BACKUP } from './defaults.js';
 import {
   setSessionCookie, clearSessionCookie, currentUser, rateLimit
 } from './auth.js';
+import {
+  createBackup, listBackups, backupPath, deleteBackup, pruneOld,
+  readBackupConfig, scheduleBackups
+} from './backup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -19,7 +23,7 @@ const DUMMY_HASH = bcrypt.hashSync('dummy-password-for-timing', 10);
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '64kb' }));
+app.use(express.json({ limit: '4mb' }));
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'same-origin');
@@ -104,12 +108,15 @@ function validateTheme(t) {
   const accent = String(src.accent == null ? d.accent : src.accent).trim().toUpperCase();
   if (!/^#[0-9A-F]{6}$/.test(accent)) return null;
 
+  let skin = String(src.skin == null ? d.skin : src.skin).trim().toLowerCase();
+  if (SKIN_KEYS.indexOf(skin) < 0) skin = 'coral';
+
   const title = src.title == null ? d.title : safeStr(src.title, 30);
   const pageTitle = src.pageTitle == null ? d.pageTitle : safeStr(src.pageTitle, 40);
   const footer = src.footer == null ? d.footer : safeStr(src.footer, 80);
   if (!title || !pageTitle || !footer) return null;
 
-  return { accent, title, pageTitle, footer };
+  return { skin, accent, title, pageTitle, footer };
 }
 
 function validateConfig(body) {
@@ -594,6 +601,214 @@ app.delete('/api/orders', requireUser, requireRole('admin', 'editor'), async (re
   }
 });
 
+/* ---------- 导入对账单自动核对 ---------- */
+
+function parseCsvLine(line) {
+  const cells = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += ch;
+    } else {
+      if (ch === '"') inQ = true;
+      else if (ch === ',') { cells.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  cells.push(cur);
+  return cells;
+}
+
+function findCol(headers, re) {
+  for (let i = 0; i < headers.length; i++) {
+    if (re.test(String(headers[i] || ''))) return i;
+  }
+  return -1;
+}
+
+function parseAmount(s) {
+  const n = parseFloat(String(s == null ? '' : s).replace(/[¥￥,\s]/g, ''));
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function parseTime(s) {
+  if (!s) return null;
+  const d = new Date(String(s).trim().replace(/\//g, '-'));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// 把 "YYYY-MM-DD HH:MM:SS" 当作 UTC 解析成毫秒，用于跨时区一致的墙上时间求差
+function naiveMs(s) {
+  if (!s) return NaN;
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/.exec(String(s).trim());
+  if (!m) return NaN;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+}
+
+function parseStatement(text) {
+  const raw = String(text || '').replace(/^\uFEFF/, '');
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  let hi = 0;
+  for (let i = 0; i < Math.min(lines.length, 5); i++) {
+    if (/金额|交易时间|订单号|收款/.test(lines[i])) { hi = i; break; }
+  }
+  const headers = parseCsvLine(lines[hi]);
+  const idx = {
+    time: findCol(headers, /交易时间|下单时间|创建时间|付款时间/),
+    amount: findCol(headers, /金额|实付|收款金额|订单金额/),
+    note: findCol(headers, /备注|商家备注/),
+    project: findCol(headers, /商品|收款项目|项目名称|商品名称/),
+    wechat: findCol(headers, /微信订单号|支付订单号|交易单号/),
+    merchant: findCol(headers, /商户订单号|商户单号/)
+  };
+  const rows = [];
+  for (let i = hi + 1; i < lines.length; i++) {
+    const c = parseCsvLine(lines[i]);
+    if (!c.length || c.every(x => !x)) continue;
+    rows.push({
+      time: idx.time >= 0 ? c[idx.time] : '',
+      amount: idx.amount >= 0 ? c[idx.amount] : '',
+      note: idx.note >= 0 ? c[idx.note] : '',
+      project: idx.project >= 0 ? c[idx.project] : '',
+      wechat: idx.wechat >= 0 ? c[idx.wechat] : '',
+      merchant: idx.merchant >= 0 ? c[idx.merchant] : ''
+    });
+  }
+  return rows;
+}
+
+app.post('/api/orders/import', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  const csv = String(req.body?.csv || '');
+  if (csv.length > 4 * 1024 * 1024) return res.status(400).json({ error: '内容过大' });
+  const rows = parseStatement(csv);
+  if (!rows.length) return res.status(400).json({ error: '没有识别到有效行，请确认粘贴的是对账单 CSV' });
+  if (rows.length > 20000) return res.status(400).json({ error: '单次最多 20000 行' });
+
+  try {
+    const [orders] = await pool.query(
+      `SELECT id, order_no, project, amount, status, note, created_at AS created_raw
+       FROM orders ORDER BY id ASC`
+    );
+
+    const used = new Set();
+    const matched = [];
+    const unmatchedCsv = [];
+
+    for (const r of rows) {
+      const amt = parseAmount(r.amount);
+      const note = String(r.note || '');
+      const merchant = String(r.merchant || '');
+      let found = null;
+
+      if (!found) {
+        for (const o of orders) {
+          if (used.has(o.id)) continue;
+          if (note.indexOf(o.order_no) >= 0) { found = o; break; }
+        }
+      }
+      if (!found && merchant) {
+        for (const o of orders) {
+          if (used.has(o.id)) continue;
+          if (merchant.trim() === o.order_no) { found = o; break; }
+        }
+      }
+      if (!found && Number.isFinite(amt)) {
+        let best = null, bestDt = Infinity, candidates = [];
+        const rMs = naiveMs(r.time);
+        for (const o of orders) {
+          if (used.has(o.id)) continue;
+          if (Math.abs(Number(o.amount) - amt) > 0.01) continue;
+          if (r.project && o.project) {
+            if (r.project.indexOf(o.project) < 0 && o.project.indexOf(r.project) < 0) continue;
+          }
+          candidates.push(o);
+          const oMs = naiveMs(o.created_raw);
+          if (!isNaN(oMs) && !isNaN(rMs)) {
+            const dt = Math.abs(oMs - rMs) / 1000;
+            if (dt <= 300 && dt < bestDt) { bestDt = dt; best = o; }
+          }
+        }
+        // 时区无关兜底：同金额同项目仅有一笔时直接匹配
+        if (!best && candidates.length === 1) best = candidates[0];
+        found = best;
+      }
+
+      if (found) { used.add(found.id); matched.push({ row: r, order: found }); }
+      else { unmatchedCsv.push({ time: r.time, amount: r.amount, note: note.slice(0, 60) }); }
+    }
+
+    let updated = 0, skippedAlreadyPaid = 0;
+    for (const m of matched) {
+      if (m.order.status === 'paid') { skippedAlreadyPaid++; continue; }
+      const paidAt = parseTime(m.row.time) ? String(m.row.time).trim() : null;
+      const append = '（自动核对' + (m.row.wechat ? ' · 微信订单 ' + m.row.wechat : '') + '）';
+      const newNote = ((m.order.note ? m.order.note + ' ' : '') + append).slice(0, 200);
+      await pool.query(
+        'UPDATE orders SET status = ?, paid_at = ' + (paidAt ? '?' : 'NOW()') + ', note = ? WHERE id = ?',
+        paidAt ? ['paid', paidAt, newNote, m.order.id] : ['paid', newNote, m.order.id]
+      );
+      updated++;
+    }
+
+    const unmatchedOrders = orders.filter(o => !used.has(o.id) && o.status !== 'paid')
+      .map(o => ({ order: o.order_no, project: o.project, amount: Number(o.amount) }));
+
+    if (updated > 0 || matched.length > 0) {
+      await audit(req.user.username, 'order_import',
+        '导入对账单：' + rows.length + ' 行，匹配 ' + matched.length + ' 笔，标记到账 ' + updated + ' 笔', req.ip);
+    }
+
+    res.json({
+      ok: true,
+      csvRows: rows.length,
+      matched: matched.length,
+      updated,
+      skippedAlreadyPaid,
+      unmatchedCsv: unmatchedCsv.slice(0, 20),
+      unmatchedCsvCount: unmatchedCsv.length,
+      unmatchedOrders: unmatchedOrders.slice(0, 20),
+      unmatchedOrdersCount: unmatchedOrders.length
+    });
+  } catch (e) {
+    console.error('[orders:import]', e.message);
+    res.status(500).json({ error: '处理失败' });
+  }
+});
+
+/* ---------- 批量操作 ---------- */
+
+app.post('/api/orders/batch', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : [];
+  const action = String(req.body?.action || '');
+  const clean = ids.filter(n => Number.isInteger(n) && n > 0);
+  if (!clean.length || clean.length > 1000) return res.status(400).json({ error: '请选择 1-1000 条记录' });
+  if (action !== 'paid' && action !== 'pending' && action !== 'delete') {
+    return res.status(400).json({ error: '操作不正确' });
+  }
+  const ph = clean.map(() => '?').join(',');
+  try {
+    let result;
+    if (action === 'delete') {
+      [result] = await pool.query('DELETE FROM orders WHERE id IN (' + ph + ')', clean);
+    } else {
+      [result] = await pool.query(
+        'UPDATE orders SET status = ?, paid_at = ' + (action === 'paid' ? 'NOW()' : 'NULL') +
+        ' WHERE id IN (' + ph + ')', [action, ...clean]
+      );
+    }
+    await audit(req.user.username, 'order_batch',
+      '批量' + ({ paid: '标记到账', pending: '取消到账', delete: '删除' }[action]) +
+      ' ' + result.affectedRows + ' 条', req.ip);
+    res.json({ ok: true, affected: result.affectedRows });
+  } catch (e) {
+    console.error('[orders:batch]', e.message);
+    res.status(500).json({ error: '操作失败' });
+  }
+});
+
 /* ---------- 管理员账号 ---------- */
 
 app.get('/api/admins', requireUser, requireRole('admin'), async (req, res) => {
@@ -740,6 +955,71 @@ app.get('/api/logs', requireUser, requireRole('admin'), async (req, res) => {
   }
 });
 
+/* ---------- 备份 ---------- */
+
+app.get('/api/backups', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  try {
+    res.json({ backups: listBackups(), config: await readBackupConfig() });
+  } catch (e) {
+    console.error('[backup:list]', e.message);
+    res.status(500).json({ error: '读取失败' });
+  }
+});
+
+app.get('/api/backups/config', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  try {
+    res.json({ config: await readBackupConfig() });
+  } catch (e) {
+    res.status(500).json({ error: '读取失败' });
+  }
+});
+
+app.put('/api/backups/config', requireUser, requireRole('admin'), async (req, res) => {
+  const body = req.body || {};
+  const config = {
+    enabled: !!body.enabled,
+    hour: Math.max(0, Math.min(23, Math.floor(Number(body.hour) || 0))),
+    keepDays: Math.max(1, Math.min(3650, Math.floor(Number(body.keepDays) || 30)))
+  };
+  try {
+    await writeSetting('backup_config', config);
+    if (config.enabled) {
+      await createBackup().catch(() => {});
+      pruneOld(config.keepDays);
+    }
+    scheduleBackups();
+    await audit(req.user.username, 'backup_config',
+      '备份设置：' + (config.enabled ? '开启' : '关闭') + '，每天 ' + config.hour + ' 点，保留 ' + config.keepDays + ' 天', req.ip);
+    res.json({ ok: true, config });
+  } catch (e) {
+    console.error('[backup:config]', e.message);
+    res.status(500).json({ error: '保存失败' });
+  }
+});
+
+app.post('/api/backups', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  try {
+    const info = await createBackup();
+    await audit(req.user.username, 'backup', '手动创建备份 ' + info.file, req.ip);
+    res.json({ ok: true, file: info.file, size: info.size });
+  } catch (e) {
+    console.error('[backup:create]', e.message);
+    res.status(500).json({ error: '创建失败' });
+  }
+});
+
+app.get('/api/backups/:file', requireUser, requireRole('admin', 'editor'), (req, res) => {
+  const full = backupPath(req.params.file);
+  if (!full) return res.status(404).json({ error: '文件不存在' });
+  res.download(full, req.params.file);
+});
+
+app.delete('/api/backups/:file', requireUser, requireRole('admin'), async (req, res) => {
+  if (!deleteBackup(req.params.file)) return res.status(404).json({ error: '文件不存在' });
+  await audit(req.user.username, 'backup', '删除备份 ' + req.params.file, req.ip);
+  res.json({ ok: true });
+});
+
 /* ---------- 静态资源 ---------- */
 
 app.get('/admin', (req, res) => res.redirect('/admin.html'));
@@ -762,4 +1042,5 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`[zan] listening on http://localhost:${PORT}`);
+  scheduleBackups();
 });

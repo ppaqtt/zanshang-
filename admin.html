@@ -174,6 +174,40 @@
   .dialog-card .field{margin-bottom:12px;}
   .dialog-card .row{display:flex;gap:10px;margin-top:6px;}
   .dialog-card .row .btn{flex:1;}
+  .dialog-card.import{max-width:600px;}
+  .dialog-card textarea{width:100%;min-height:160px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;}
+  /* 批量操作 */
+  .batch-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;margin:12px 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;flex-wrap:wrap;}
+  .batch-bar .count{color:#c2410c;font-weight:600;}
+  .table-wrap input[type=checkbox]{width:16px;height:16px;cursor:pointer;}
+  th.sel,td.sel{width:36px;text-align:center;}
+  /* 导入结果 */
+  .import-result{margin-top:12px;font-size:13px;}
+  .import-result .ok{color:#16a34a;font-weight:600;}
+  .import-result .warn{color:#ea580c;}
+  .import-result ul{margin:6px 0 0;padding-left:18px;color:#555;max-height:160px;overflow:auto;}
+  /* 皮肤 */
+  .skin-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+  .skin-swatch{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #e5e5e5;border-radius:8px;cursor:pointer;font-size:12px;background:#fff;}
+  .skin-swatch.active{border-color:#222;background:#fafafa;}
+  .skin-swatch .dot{width:14px;height:14px;border-radius:50%;border:1px solid rgba(0,0,0,.1);}
+  /* 备份 */
+  .backup-list{list-style:none;padding:0;margin:0;}
+  .backup-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0;flex-wrap:wrap;}
+  .backup-list .meta{font-size:13px;color:#666;}
+  /* 响应式 */
+  @media (max-width:720px){
+    .topbar-inner{padding:10px 14px;flex-wrap:wrap;gap:8px;}
+    .top-right{flex-wrap:wrap;justify-content:flex-end;}
+    .wrap{padding:12px;}
+    .card{padding:16px;border-radius:14px;}
+    .nav-inner{padding:0 10px;}
+    .nav button{padding:8px 12px;font-size:13px;}
+    .dash-grid{grid-template-columns:repeat(2,1fr);}
+    .filters{grid-template-columns:1fr 1fr;}
+    .actions{flex-wrap:wrap;}
+    .card .proj-grid[style]{grid-template-columns:1fr !important;}
+  }
 </style>
 </head>
 <body>
@@ -219,6 +253,7 @@
       <button data-tab="config">页面配置</button>
       <button data-tab="admins" data-role="admin">管理员</button>
       <button data-tab="logs" data-role="admin">操作日志</button>
+      <button data-tab="backups" data-role="admin,editor">数据备份</button>
     </div>
   </nav>
 
@@ -312,10 +347,17 @@
           </select>
         </div>
 
+        <div class="batch-bar" id="batchBar" hidden>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="selAll"> 全选当前页</label>
+          <span class="count">已选 <span id="selCount">0</span> 条</span>
+          <button class="btn sm" data-role="admin,editor" id="batchPaid">批量到账</button>
+          <button class="btn ghost sm" data-role="admin,editor" id="batchPending">取消到账</button>
+          <button class="btn danger sm" data-role="admin,editor" id="batchDel">批量删除</button>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>订单号</th><th>项目</th><th>金额</th><th>状态</th><th>来源</th><th>备注</th><th>生成时间</th><th></th></tr>
+              <tr><th class="sel"></th><th>订单号</th><th>项目</th><th>金额</th><th>状态</th><th>来源</th><th>备注</th><th>生成时间</th><th></th></tr>
             </thead>
             <tbody id="orderBody"></tbody>
           </table>
@@ -326,6 +368,7 @@
         </div>
 
         <div class="actions">
+          <button class="btn" id="importBtn" data-role="admin,editor">导入对账单</button>
           <button class="btn ghost" id="csvBtn">导出 CSV</button>
           <button class="btn danger" id="clearBtn" data-role="admin,editor">清空记录</button>
           <span class="stamp" id="filterStamp"></span>
@@ -356,6 +399,11 @@
             <div class="field"><label>浏览器标题</label><input id="pageTitleInput" maxlength="40" placeholder="感谢相伴"></div>
             <div class="field"><label>页脚文案</label><input id="footerInput" maxlength="80"></div>
           </div>
+        </div>
+
+        <div class="field">
+          <label>页面皮肤（切换整体配色，主色可单独微调）</label>
+          <div id="skinRow" class="skin-row"></div>
         </div>
 
         <div class="field">
@@ -463,7 +511,56 @@
       </section>
     </section>
 
+    <!-- 数据备份 -->
+    <section class="tab-panel" data-panel="backups" hidden>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>数据备份</h2>
+            <p>备份订单、配置、日志等全部数据为 JSON 文件，存于服务器，可下载或删除。</p>
+          </div>
+          <button class="btn sm" id="backupNow" data-role="admin,editor">立即备份</button>
+        </div>
+
+        <div class="proj-grid" style="grid-template-columns:1fr 120px 120px" data-role="admin">
+          <div class="field"><label>自动备份</label>
+            <select id="backupEnabled"><option value="0">关闭</option><option value="1">开启</option></select>
+          </div>
+          <div class="field"><label>每天几点（24 小时制）</label>
+            <select id="backupHour"></select>
+          </div>
+          <div class="field"><label>保留天数</label>
+            <input id="backupKeep" type="number" min="1" max="3650" value="30">
+          </div>
+        </div>
+        <div class="actions" data-role="admin">
+          <button class="btn" id="backupConfigSave">保存备份设置</button>
+          <span class="stamp" id="backupStamp"></span>
+        </div>
+
+        <div class="note" style="margin-top:16px">备份文件列表（最新在前）</div>
+        <ul class="backup-list" id="backupList"></ul>
+        <div class="empty" id="backupEmpty" hidden>暂无备份，点右上角「立即备份」</div>
+      </section>
+    </section>
+
     <div class="foot">赞赏管理台 · 登录态 7 天有效<br>数据由服务器数据库提供</div>
+  </div>
+</div>
+
+<!-- 导入对账单 -->
+<div class="dialog" id="importDialog" hidden>
+  <div class="dialog-card import">
+    <h3>导入对账单自动核对</h3>
+    <p style="color:#666;font-size:13px;margin:0 0 10px">
+      把商家助手 / 微信支付导出的对账单 CSV 内容粘贴到下方，系统会按「备注里的订单号」优先匹配，匹配不上再按「金额 + 5 分钟内 + 项目名」兜底，自动标记到账。
+    </p>
+    <textarea id="importText" placeholder="在这里粘贴 CSV 全部内容..."></textarea>
+    <div class="import-result" id="importResult" hidden></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" type="button" id="importCancel">关闭</button>
+      <button class="btn" type="button" id="importSubmit">开始匹配</button>
+    </div>
   </div>
 </div>
 
@@ -492,8 +589,16 @@
     login: '登录', login_fail: '登录失败', password_change: '修改密码',
     config_update: '修改配置', order_status: '订单状态', order_delete: '删除订单',
     order_note: '订单备注', order_clear: '清空订单', admin_create: '创建账号',
-    admin_update: '修改账号', admin_delete: '删除账号', notify_update: '通知设置'
+    admin_update: '修改账号', admin_delete: '删除账号', notify_update: '通知设置',
+    order_import: '导入对账', order_batch: '批量操作', backup: '备份', backup_config: '备份设置'
   };
+  const SKINS = [
+    { key: 'coral', name: '珊瑚暖橘', accent: '#E4573D' },
+    { key: 'forest', name: '森林墨绿', accent: '#2E7D5B' },
+    { key: 'sunset', name: '落日橙粉', accent: '#FF7A45' },
+    { key: 'mint', name: '薄荷青', accent: '#16A085' },
+    { key: 'night', name: '暗夜紫', accent: '#6C5CE7' }
+  ];
 
   const state = {
     me: null,
@@ -502,7 +607,9 @@
     admins: [],
     logs: { logs: [], total: 0, page: 1, size: 50 },
     traffic: null,
-    logPage: 1
+    logPage: 1,
+    selectedIds: new Set(),
+    backup: { list: [], config: null }
   };
 
   const isAdmin = () => state.me && state.me.role === 'admin';
@@ -584,6 +691,7 @@
     if (isAdmin()) {
       await Promise.all([loadAdmins(), loadLogs(1), loadNotify()]);
     }
+    if (canEdit()) await loadBackups();
   }
 
   $('loginForm').addEventListener('submit', async e => {
@@ -630,6 +738,7 @@
       p.hidden = p.dataset.panel !== name;
     });
     if (name === 'dashboard') renderDashboard();
+    if (name === 'backups') loadBackups();
   }
 
   document.querySelectorAll('.nav button[data-tab]').forEach(btn => {
@@ -669,6 +778,17 @@
     });
   }
 
+  let currentSkin = 'coral';
+  function renderSkinSwatches(active) {
+    currentSkin = SKINS.some(s => s.key === active) ? active : 'coral';
+    $('skinRow').innerHTML = SKINS.map(s =>
+      '<span class="skin-swatch' + (s.key === currentSkin ? ' active' : '') +
+      '" data-skin="' + s.key + '">' +
+      '<span class="dot" style="background:' + s.accent + '"></span>' +
+      esc(s.name) + '</span>'
+    ).join('');
+  }
+
   function fillConfigForm() {
     if (!state.config) return;
     $('amountsInput').value = (state.config.amounts || []).join(', ');
@@ -677,6 +797,7 @@
     $('titleInput').value = t.title || '';
     $('pageTitleInput').value = t.pageTitle || '';
     $('footerInput').value = t.footer || '';
+    renderSkinSwatches(t.skin);
     renderProjects();
   }
 
@@ -712,6 +833,7 @@
     if (bad) { toast('名称、前缀、图片路径都不能为空，前缀用 1-10 个字母'); return null; }
 
     const theme = {
+      skin: currentSkin,
       accent: String($('accentInput').value || '').toUpperCase(),
       title: $('titleInput').value.trim(),
       pageTitle: $('pageTitleInput').value.trim(),
@@ -846,6 +968,17 @@
     $('statProjects').innerHTML = Object.keys(projects).length + '<small>个</small>';
   }
 
+  function updateBatchBar() {
+    const bar = $('batchBar');
+    const rows = currentRows();
+    const visible = canEdit() && rows.length > 0;
+    bar.hidden = !visible;
+    if (!visible) return;
+    const n = rows.filter(r => state.selectedIds.has(r.id)).length;
+    $('selCount').textContent = n;
+    $('selAll').checked = n > 0 && n === rows.length;
+  }
+
   function renderOrders() {
     const rows = currentRows();
     renderStats();
@@ -856,6 +989,7 @@
     if (!rows.length) {
       $('emptyState').hidden = false;
       $('filterStamp').textContent = '';
+      updateBatchBar();
       return;
     }
     $('emptyState').hidden = true;
@@ -863,6 +997,10 @@
 
     rows.forEach(r => {
       const tr = document.createElement('tr');
+      const sel = canEdit()
+        ? '<td class="sel"><input type="checkbox" class="rowSel" data-id="' + r.id + '"' +
+          (state.selectedIds.has(r.id) ? ' checked' : '') + '></td>'
+        : '<td class="sel"></td>';
       const actions = canEdit()
         ? '<button class="btn ghost sm" data-act="status" data-id="' + r.id + '">' +
             (r.status === 'paid' ? '取消到账' : '标记到账') + '</button> ' +
@@ -870,6 +1008,7 @@
           '<button class="btn ghost sm" data-act="del" data-id="' + r.id + '">删除</button>'
         : '';
       tr.innerHTML =
+        sel +
         '<td class="oid">' + esc(r.order) + '</td>' +
         '<td>' + esc(r.project || '—') + '</td>' +
         '<td class="num">¥' + (Number(r.amount) || 0) + '</td>' +
@@ -881,6 +1020,7 @@
         '<td>' + actions + '</td>';
       body.appendChild(tr);
     });
+    updateBatchBar();
   }
 
   async function toggleStatus(id) {
@@ -1272,6 +1412,125 @@
     }
   });
 
+  /* ---------- 批量操作 ---------- */
+
+  async function runBatch(action, label) {
+    const ids = Array.from(state.selectedIds);
+    if (!ids.length) { toast('请先勾选记录'); return; }
+    if (action === 'delete' && !window.confirm('确定批量删除选中的 ' + ids.length + ' 条记录吗？不可撤销。')) return;
+    try {
+      const res = await apiJson('/api/orders/batch', {
+        method: 'POST', body: JSON.stringify({ ids, action })
+      });
+      if (action === 'delete') {
+        state.orders = state.orders.filter(o => !state.selectedIds.has(o.id));
+      } else {
+        state.orders.forEach(o => {
+          if (state.selectedIds.has(o.id)) {
+            o.status = action;
+            o.paidMs = action === 'paid' ? Date.now() : null;
+          }
+        });
+      }
+      state.selectedIds.clear();
+      renderOrders();
+      renderDashboard();
+      toast(label + ' ' + res.affected + ' 条');
+    } catch (e) { toast(e.message || '操作失败'); }
+  }
+
+  /* ---------- 导入对账单 ---------- */
+
+  function openImport() {
+    $('importText').value = '';
+    $('importResult').hidden = true;
+    $('importResult').innerHTML = '';
+    $('importDialog').hidden = false;
+  }
+  function closeImport() { $('importDialog').hidden = true; }
+
+  async function runImport() {
+    const csv = $('importText').value;
+    if (!csv.trim()) { toast('请先粘贴 CSV 内容'); return; }
+    $('importSubmit').disabled = true;
+    try {
+      const res = await apiJson('/api/orders/import', {
+        method: 'POST', body: JSON.stringify({ csv })
+      });
+      let html = '<div class="ok">识别 ' + res.csvRows + ' 行，匹配 ' + res.matched + ' 笔，其中新标记到账 ' + res.updated + ' 笔' +
+        (res.skippedAlreadyPaid ? '（' + res.skippedAlreadyPaid + ' 笔已是到账状态，跳过）' : '') + '</div>';
+      if (res.unmatchedCsvCount) {
+        html += '<div class="warn" style="margin-top:8px">对账单中 ' + res.unmatchedCsvCount + ' 行未匹配到本地订单：</div><ul>';
+        res.unmatchedCsv.forEach(x => {
+          html += '<li>' + esc(x.time || '') + ' ¥' + esc(x.amount || '') + (x.note ? ' 备注:' + esc(x.note) : '') + '</li>';
+        });
+        if (res.unmatchedCsvCount > res.unmatchedCsv.length) html += '<li>…其余 ' + (res.unmatchedCsvCount - res.unmatchedCsv.length) + ' 行省略</li>';
+        html += '</ul>';
+      }
+      if (res.unmatchedOrdersCount) {
+        html += '<div class="warn" style="margin-top:8px">仍有 ' + res.unmatchedOrdersCount + ' 笔本地待核对订单未在对账单中出现：</div><ul>';
+        res.unmatchedOrders.forEach(x => {
+          html += '<li>' + esc(x.order) + ' ' + esc(x.project) + ' ¥' + x.amount + '</li>';
+        });
+        if (res.unmatchedOrdersCount > res.unmatchedOrders.length) html += '<li>…其余 ' + (res.unmatchedOrdersCount - res.unmatchedOrders.length) + ' 笔省略</li>';
+        html += '</ul>';
+      }
+      $('importResult').innerHTML = html;
+      $('importResult').hidden = false;
+      await loadOrders();
+      renderDashboard();
+    } catch (e) {
+      $('importResult').innerHTML = '<div class="warn">' + esc(e.message || '导入失败') + '</div>';
+      $('importResult').hidden = false;
+    } finally {
+      $('importSubmit').disabled = false;
+    }
+  }
+
+  /* ---------- 数据备份 ---------- */
+
+  function fmtSize(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(2) + ' MB';
+  }
+  function fillBackupHourOptions() {
+    const sel = $('backupHour');
+    if (sel.options.length) return;
+    for (let h = 0; h < 24; h++) {
+      const o = document.createElement('option');
+      o.value = h; o.textContent = (h < 10 ? '0' + h : h) + ':00';
+      sel.appendChild(o);
+    }
+  }
+  async function loadBackups() {
+    try {
+      fillBackupHourOptions();
+      const data = await apiJson('/api/backups');
+      state.backup = data;
+      renderBackups();
+    } catch (e) { /* 未登录时静默 */ }
+  }
+  function renderBackups() {
+    const cfg = state.backup.config || {};
+    $('backupEnabled').value = cfg.enabled ? '1' : '0';
+    $('backupHour').value = String(cfg.hour == null ? 3 : cfg.hour);
+    $('backupKeep').value = cfg.keepDays == null ? 30 : cfg.keepDays;
+    const list = state.backup.backups || [];
+    const ul = $('backupList');
+    ul.innerHTML = '';
+    $('backupEmpty').hidden = list.length > 0;
+    list.forEach(b => {
+      const li = document.createElement('li');
+      li.innerHTML = '<div><b>' + esc(b.file) + '</b><div class="meta">' + fmtSize(b.size) + ' · ' + timeText(b.mtime) + '</div></div>' +
+        '<div class="row" style="margin:0">' +
+          '<a class="btn ghost sm" href="/api/backups/' + encodeURIComponent(b.file) + '" target="_blank" rel="noopener">下载</a>' +
+          (isAdmin() ? '<button class="btn danger sm" data-bkdel="' + esc(b.file) + '">删除</button>' : '') +
+        '</div>';
+      ul.appendChild(li);
+    });
+  }
+
   /* ---------- 事件绑定 ---------- */
 
   $('dashRefresh').addEventListener('click', async () => {
@@ -1306,6 +1565,66 @@
     if (btn.dataset.act === 'status') toggleStatus(id);
     if (btn.dataset.act === 'note') editNote(id);
     if (btn.dataset.act === 'del') deleteOrder(id);
+  });
+
+  $('importBtn').addEventListener('click', openImport);
+  $('importCancel').addEventListener('click', closeImport);
+  $('importSubmit').addEventListener('click', runImport);
+
+  $('selAll').addEventListener('change', e => {
+    const rows = currentRows();
+    if (e.target.checked) rows.forEach(r => state.selectedIds.add(r.id));
+    else rows.forEach(r => state.selectedIds.delete(r.id));
+    renderOrders();
+  });
+  $('orderBody').addEventListener('change', e => {
+    const cb = e.target.closest('input.rowSel');
+    if (!cb) return;
+    const id = Number(cb.dataset.id);
+    if (cb.checked) state.selectedIds.add(id); else state.selectedIds.delete(id);
+    updateBatchBar();
+  });
+  $('batchPaid').addEventListener('click', () => runBatch('paid', '已批量标记到账'));
+  $('batchPending').addEventListener('click', () => runBatch('pending', '已批量取消到账'));
+  $('batchDel').addEventListener('click', () => runBatch('delete', '已批量删除'));
+
+  $('skinRow').addEventListener('click', e => {
+    const sw = e.target.closest('.skin-swatch');
+    if (!sw) return;
+    currentSkin = sw.dataset.skin;
+    const sk = SKINS.find(s => s.key === currentSkin);
+    if (sk) $('accentInput').value = sk.accent;
+    renderSkinSwatches(currentSkin);
+  });
+
+  $('backupNow').addEventListener('click', async () => {
+    $('backupNow').disabled = true;
+    try { await apiJson('/api/backups', { method: 'POST' }); await loadBackups(); toast('备份已创建'); }
+    catch (e) { toast(e.message || '备份失败'); } finally { $('backupNow').disabled = false; }
+  });
+  $('backupConfigSave').addEventListener('click', async () => {
+    const body = {
+      enabled: $('backupEnabled').value === '1',
+      hour: Number($('backupHour').value) || 0,
+      keepDays: Math.max(1, Math.min(3650, Number($('backupKeep').value) || 30))
+    };
+    try {
+      const res = await apiJson('/api/backups/config', { method: 'PUT', body: JSON.stringify(body) });
+      state.backup.config = res.config;
+      renderBackups();
+      $('backupStamp').textContent = '已保存 ' + timeText(Date.now());
+      toast('备份设置已保存');
+    } catch (e) { toast(e.message || '保存失败'); }
+  });
+  $('backupList').addEventListener('click', async e => {
+    const btn = e.target.closest('button[data-bkdel]');
+    if (!btn) return;
+    if (!window.confirm('确定删除备份 ' + btn.dataset.bkdel + ' 吗？')) return;
+    try {
+      await apiJson('/api/backups/' + encodeURIComponent(btn.dataset.bkdel), { method: 'DELETE' });
+      await loadBackups();
+      toast('已删除');
+    } catch (e) { toast(e.message || '删除失败'); }
   });
 
   /* ---------- 初始化 ---------- */

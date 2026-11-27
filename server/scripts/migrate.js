@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { pool } from '../src/db.js';
-import { DEFAULT_CONFIG, DEFAULT_NOTIFY } from '../src/defaults.js';
+import { DEFAULT_CONFIG, DEFAULT_NOTIFY, DEFAULT_BACKUP, SKIN_KEYS } from '../src/defaults.js';
 
 /* 幂等升级：已存在的旧库直接执行，不会重复加列或丢数据 */
 async function columnExists(table, column) {
@@ -114,12 +114,20 @@ async function main() {
   } else {
     let conf = null;
     try { conf = JSON.parse(cfg[0].v); } catch (e) { conf = null; }
-    if (conf && !conf.theme) {
-      conf.theme = DEFAULT_CONFIG.theme;
-      await pool.query("UPDATE settings SET v = ? WHERE k = 'page_config'", [JSON.stringify(conf)]);
-      console.log('  + 已补充默认主题配置');
+    if (!conf) {
+      console.log('  = 页面配置已存在（解析失败，跳过）');
     } else {
-      console.log('  = 页面配置已存在');
+      let changed = false;
+      if (!conf.theme) { conf.theme = DEFAULT_CONFIG.theme; changed = true; }
+      else if (typeof conf.theme.skin !== 'string' || SKIN_KEYS.indexOf(conf.theme.skin) < 0) {
+        conf.theme.skin = DEFAULT_CONFIG.theme.skin; changed = true;
+      }
+      if (changed) {
+        await pool.query("UPDATE settings SET v = ? WHERE k = 'page_config'", [JSON.stringify(conf)]);
+        console.log('  + 已补充/修正主题配置');
+      } else {
+        console.log('  = 页面配置已存在');
+      }
     }
   }
 
@@ -130,6 +138,15 @@ async function main() {
       [JSON.stringify(DEFAULT_NOTIFY)]
     );
     console.log('  + 已写入默认通知配置');
+  }
+
+  const [bk] = await pool.query("SELECT k FROM settings WHERE k = 'backup_config' LIMIT 1");
+  if (!bk.length) {
+    await pool.query(
+      "INSERT INTO settings (k, v) VALUES ('backup_config', ?)",
+      [JSON.stringify(DEFAULT_BACKUP)]
+    );
+    console.log('  + 已写入默认备份配置');
   }
 
   console.log('[migrate] 完成');
