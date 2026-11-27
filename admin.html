@@ -133,6 +133,7 @@
   .badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;line-height:1.4;}
   .badge.paid{background:#eaf7ee;color:#2e8b57;}
   .badge.pending{background:#fff4e5;color:#b7791f;}
+  .badge.expired{background:#f2f2f5;color:#8a8a8a;}
   .badge.role{background:#f2f2f5;color:#666;margin-left:4px;}
   select.roleSel{border:1px solid #e4e4e6;border-radius:8px;padding:5px 8px;font-size:12px;background:#fff;color:#555;}
 
@@ -195,6 +196,22 @@
   .backup-list{list-style:none;padding:0;margin:0;}
   .backup-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0;flex-wrap:wrap;}
   .backup-list .meta{font-size:13px;color:#666;}
+  /* 订单详情 / 导入预览 / 两步验证 */
+  .dlg-wide{max-width:640px;}
+  .kv{font-size:12.5px;color:#555;line-height:1.9;}
+  .kv b{color:#333;font-weight:600;}
+  .proof-box{margin-top:6px;}
+  .proof-box img{max-width:100%;max-height:240px;border-radius:10px;border:1px solid #eee;display:block;}
+  .proof-empty{font-size:12px;color:#b5b5b5;}
+  .preview-table{max-height:260px;overflow:auto;border:1px solid #f0f0f0;border-radius:10px;margin-top:10px;}
+  .preview-table table{min-width:520px;}
+  .preview-table th,.preview-table td{padding:8px 10px;font-size:12px;}
+  .batch-list{list-style:none;padding:0;margin:12px 0 0;}
+  .batch-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid #f2f2f2;font-size:12.5px;color:#666;flex-wrap:wrap;}
+  .batch-list .t{color:#999;font-size:11.5px;}
+  .secret-box{word-break:break-all;font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#fafafa;border:1px solid #eee;border-radius:8px;padding:9px 10px;color:#444;user-select:all;}
+  .step{display:flex;gap:6px;align-items:center;font-size:12px;color:#8a8a8a;margin:2px 0 8px;}
+  .step i{width:18px;height:18px;border-radius:50%;background:#f4f4f5;color:#999;font-style:normal;font-size:11px;display:flex;align-items:center;justify-content:center;}
   /* 响应式 */
   @media (max-width:720px){
     .topbar-inner{padding:10px 14px;flex-wrap:wrap;gap:8px;}
@@ -225,6 +242,10 @@
     <div class="field">
       <label for="password">密码</label>
       <input id="password" type="password" autocomplete="current-password">
+    </div>
+    <div class="field" id="codeField" hidden>
+      <label for="loginCode">动态验证码</label>
+      <input id="loginCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位数字">
     </div>
     <button class="btn" type="submit" id="loginBtn">登录</button>
     <p class="login-err" id="loginErr"></p>
@@ -275,8 +296,12 @@
           <div class="dash-item"><div class="k">累计金额</div><div class="v">¥<span id="dashSum">0</span></div></div>
           <div class="dash-item"><div class="k">今日笔数</div><div class="v" id="dashTodayCount">0<small>笔</small></div></div>
           <div class="dash-item"><div class="k">今日金额</div><div class="v">¥<span id="dashTodaySum">0</span></div></div>
-          <div class="dash-item"><div class="k">已标记到账</div><div class="v">¥<span id="dashPaidSum">0</span></div></div>
+          <div class="dash-item"><div class="k">本月金额</div><div class="v">¥<span id="dashMonthSum">0</span></div></div>
+          <div class="dash-item"><div class="k">本月笔数</div><div class="v" id="dashMonthCount">0<small>笔</small></div></div>
+          <div class="dash-item"><div class="k">客单价</div><div class="v">¥<span id="dashAvg">0</span></div></div>
+          <div class="dash-item"><div class="k">已确认到账</div><div class="v">¥<span id="dashPaidSum">0</span></div></div>
           <div class="dash-item"><div class="k">待核对</div><div class="v" id="dashPending">0<small>笔</small></div></div>
+          <div class="dash-item"><div class="k">已过期</div><div class="v" id="dashExpired">0<small>笔</small></div></div>
         </div>
       </section>
 
@@ -300,7 +325,13 @@
       </section>
 
       <section class="card">
-        <div class="card-head"><div><h2>近 14 天金额趋势</h2></div></div>
+        <div class="card-head">
+          <div><h2>金额趋势</h2></div>
+          <select id="chartRange" class="roleSel">
+            <option value="14">近 14 天</option>
+            <option value="30">近 30 天</option>
+          </select>
+        </div>
         <div class="chart-box" id="chartBox"></div>
       </section>
 
@@ -332,12 +363,13 @@
         </div>
 
         <div class="filters">
-          <input id="searchInput" placeholder="搜索订单号">
+          <input id="searchInput" placeholder="搜索订单号 / 备注 / 内部备注">
           <select id="projectFilter"><option value="">全部项目</option></select>
           <select id="statusFilter">
             <option value="">全部状态</option>
             <option value="pending">待核对</option>
             <option value="paid">已到账</option>
+            <option value="expired">已过期</option>
           </select>
           <select id="timeFilter">
             <option value="all">全部时间</option>
@@ -345,6 +377,8 @@
             <option value="7d">近 7 天</option>
             <option value="30d">近 30 天</option>
           </select>
+          <input id="minAmount" type="number" min="0" step="0.01" placeholder="最低金额" style="flex:0 1 110px">
+          <input id="maxAmount" type="number" min="0" step="0.01" placeholder="最高金额" style="flex:0 1 110px">
         </div>
 
         <div class="batch-bar" id="batchBar" hidden>
@@ -357,8 +391,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th class="sel"></th><th>订单号</th><th>项目</th><th>金额</th><th>状态</th><th>来源</th><th>备注</th><th>生成时间</th><th></th></tr>
-            </thead>
+              <tr><th class="sel"></th><th>订单号</th><th>项目</th><th>金额</th><th>状态</th><th>来源</th><th>备注</th><th>生成时间</th><th></th></tr>            </thead>
             <tbody id="orderBody"></tbody>
           </table>
           <div class="empty" id="emptyState" hidden>
@@ -409,6 +442,11 @@
         <div class="field">
           <label>赞赏金额档位（用逗号分隔，从小到大）</label>
           <input id="amountsInput" class="mono" placeholder="1, 5, 10, 20, 50, 100, 500, 666, 888, 1000">
+        </div>
+
+        <div class="field" style="margin-top:12px">
+          <label>待核对订单超时归档（小时，0 表示不归档）</label>
+          <input id="expireInput" type="number" min="0" max="720" value="24" style="max-width:200px">
         </div>
 
         <div id="projList" style="margin-top:16px;"></div>
@@ -482,6 +520,31 @@
           <div class="actions"><button class="btn" type="submit">创建账号</button></div>
         </form>
       </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>账号安全 · 两步验证</h2>
+            <p>开启后，登录除了密码还需要手机验证器里的 6 位动态码；只对当前登录的账号生效。</p>
+          </div>
+        </div>
+        <div class="kv" id="totpStatus"></div>
+
+        <div id="totpSetupBox" hidden style="margin-top:12px">
+          <div class="step"><i>1</i>用验证器 App（Google Authenticator / 微软验证器 / 1Password）手动添加密钥</div>
+          <div class="secret-box" id="totpSecret"></div>
+          <div class="step" style="margin-top:12px"><i>2</i>输入 App 显示的 6 位验证码完成绑定</div>
+          <div class="row" style="margin:0;max-width:320px">
+            <input id="totpCode" class="mono" inputmode="numeric" maxlength="6" placeholder="6 位验证码">
+            <button class="btn sm" id="totpEnableBtn" type="button">确认开启</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="totpSetupBtn" type="button">开启两步验证</button>
+          <button class="btn danger" id="totpDisableBtn" type="button" hidden>关闭两步验证</button>
+        </div>
+      </section>
     </section>
 
     <!-- 日志 -->
@@ -533,6 +596,14 @@
             <input id="backupKeep" type="number" min="1" max="3650" value="30">
           </div>
         </div>
+        <div class="proj-grid" style="grid-template-columns:150px 1fr 1fr 1fr" data-role="admin">
+          <div class="field"><label>异地同步</label>
+            <select id="remoteType"><option value="none">关闭</option><option value="webdav">WebDAV</option></select>
+          </div>
+          <div class="field"><label>目录地址</label><input id="remoteUrl" class="mono" placeholder="https://dav.example.com/zan"></div>
+          <div class="field"><label>账号</label><input id="remoteUser" autocomplete="off"></div>
+          <div class="field"><label>密码</label><input id="remotePass" type="password" autocomplete="new-password"></div>
+        </div>
         <div class="actions" data-role="admin">
           <button class="btn" id="backupConfigSave">保存备份设置</button>
           <span class="stamp" id="backupStamp"></span>
@@ -557,9 +628,42 @@
     </p>
     <textarea id="importText" placeholder="在这里粘贴 CSV 全部内容..."></textarea>
     <div class="import-result" id="importResult" hidden></div>
+    <div id="importPreview" hidden></div>
     <div class="row" style="margin-top:14px">
       <button class="btn ghost" type="button" id="importCancel">关闭</button>
-      <button class="btn" type="button" id="importSubmit">开始匹配</button>
+      <button class="btn ghost" type="button" id="importPreviewBtn">预览匹配</button>
+      <button class="btn" type="button" id="importSubmit" hidden>确认写入</button>
+    </div>
+    <div style="margin-top:18px;font-size:12px;color:#999">最近导入批次（可撤销）</div>
+    <ul class="batch-list" id="batchHistory"></ul>
+  </div>
+</div>
+
+<!-- 订单详情 -->
+<div class="dialog" id="orderDialog" hidden>
+  <div class="dialog-card dlg-wide">
+    <h3>订单详情</h3>
+    <div class="kv" id="orderMeta"></div>
+    <div class="field" style="margin-top:10px">
+      <label>用户备注 / 对账附注（最多 200 字）</label>
+      <textarea id="orderNote" style="min-height:56px"></textarea>
+    </div>
+    <div class="field">
+      <label>内部备注（仅后台可见，最多 500 字）</label>
+      <textarea id="orderAdminNote" style="min-height:56px" maxlength="500"></textarea>
+    </div>
+    <div class="field">
+      <label>到账凭证</label>
+      <div class="proof-box" id="proofBox"></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost sm" type="button" id="proofPick">上传 / 更换图片</button>
+        <button class="btn danger sm" type="button" id="proofDel">删除凭证</button>
+      </div>
+      <input type="file" id="proofFile" accept="image/png,image/jpeg,image/webp" hidden>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" type="button" id="orderCancel">关闭</button>
+      <button class="btn" type="button" id="orderSave">保存备注</button>
     </div>
   </div>
 </div>
@@ -590,7 +694,9 @@
     config_update: '修改配置', order_status: '订单状态', order_delete: '删除订单',
     order_note: '订单备注', order_clear: '清空订单', admin_create: '创建账号',
     admin_update: '修改账号', admin_delete: '删除账号', notify_update: '通知设置',
-    order_import: '导入对账', order_batch: '批量操作', backup: '备份', backup_config: '备份设置'
+    order_import: '导入对账', order_batch: '批量操作', backup: '备份', backup_config: '备份设置',
+    order_admin_note: '内部备注', order_proof: '到账凭证', order_import_undo: '撤销导入',
+    backup_restore: '恢复备份', totp_enable: '开启两步验证', totp_disable: '关闭两步验证'
   };
   const SKINS = [
     { key: 'coral', name: '珊瑚暖橘', accent: '#E4573D' },
@@ -607,6 +713,7 @@
     admins: [],
     logs: { logs: [], total: 0, page: 1, size: 50 },
     traffic: null,
+    summary: null,
     logPage: 1,
     selectedIds: new Set(),
     backup: { list: [], config: null }
@@ -684,10 +791,11 @@
     $('userName').textContent = state.me.username;
     $('roleBadge').textContent = ROLE_LABEL[state.me.role] || state.me.role;
     applyRoles();
+    renderTotpState();
     switchTab('dashboard');
     renderOrders();
     renderDashboard();
-    await Promise.all([loadConfig(), loadOrders(), loadTraffic()]);
+    await Promise.all([loadConfig(), loadOrders(), loadTraffic(), loadSummary()]);
     if (isAdmin()) {
       await Promise.all([loadAdmins(), loadLogs(1), loadNotify()]);
     }
@@ -700,20 +808,29 @@
     $('loginBtn').disabled = true;
     const username = $('username').value.trim();
     const password = $('password').value;
+    const code = $('loginCode').value.trim();
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username, password, code })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.need2fa) {
+          $('codeField').hidden = false;
+          $('loginErr').textContent = data.error || '请输入动态验证码';
+          $('loginBtn').disabled = false;
+          $('loginCode').focus();
+          return;
+        }
         $('loginErr').textContent = data.error || '登录失败，请重试';
         $('loginBtn').disabled = false;
         return;
       }
       $('password').value = '';
-      state.me = { username: data.username, role: data.role };
+      $('loginCode').value = '';
+      state.me = { username: data.username, role: data.role, totpEnabled: !!data.totpEnabled };
       await enterApp();
     } catch (err) {
       $('loginErr').textContent = '无法连接服务器';
@@ -792,6 +909,7 @@
   function fillConfigForm() {
     if (!state.config) return;
     $('amountsInput').value = (state.config.amounts || []).join(', ');
+    $('expireInput').value = state.config.expireHours == null ? 24 : state.config.expireHours;
     const t = state.config.theme || {};
     $('accentInput').value = /^#[0-9A-Fa-f]{6}$/.test(t.accent || '') ? t.accent : '#E4573D';
     $('titleInput').value = t.title || '';
@@ -844,7 +962,14 @@
       return null;
     }
 
-    return { amounts, theme, projects };
+    let expireHours = Number($('expireInput').value);
+    if (!Number.isFinite(expireHours) || expireHours < 0 || expireHours > 720) {
+      toast('超时归档小时数需在 0 - 720 之间');
+      return null;
+    }
+    expireHours = Math.round(expireHours);
+
+    return { amounts, theme, projects, expireHours };
   }
 
   $('saveBtn').addEventListener('click', async () => {
@@ -913,6 +1038,7 @@
       state.orders = Array.isArray(data.orders) ? data.orders : [];
       renderOrders();
       renderDashboard();
+      loadSummary();
     } catch (e) { /* 401 已处理 */ }
   }
 
@@ -933,12 +1059,18 @@
     const proj = $('projectFilter').value;
     const status = $('statusFilter').value;
     const range = $('timeFilter').value;
-    return state.orders.filter(r =>
-      (!q || String(r.order).toLowerCase().indexOf(q) > -1) &&
-      (!proj || r.project === proj) &&
-      (!status || r.status === status) &&
-      inRange(r.createdMs, range)
-    );
+    const min = $('minAmount').value === '' ? null : Number($('minAmount').value);
+    const max = $('maxAmount').value === '' ? null : Number($('maxAmount').value);
+    return state.orders.filter(r => {
+      const hay = (String(r.order) + ' ' + (r.note || '') + ' ' + (r.adminNote || '')).toLowerCase();
+      const amt = Number(r.amount) || 0;
+      return (!q || hay.indexOf(q) > -1) &&
+        (!proj || r.project === proj) &&
+        (!status || r.status === status) &&
+        inRange(r.createdMs, range) &&
+        (min == null || amt >= min) &&
+        (max == null || amt <= max);
+    });
   }
 
   function renderProjectFilter() {
@@ -954,9 +1086,9 @@
   }
 
   function statusBadge(s) {
-    return s === 'paid'
-      ? '<span class="badge paid">已到账</span>'
-      : '<span class="badge pending">待核对</span>';
+    if (s === 'paid') return '<span class="badge paid">已到账</span>';
+    if (s === 'expired') return '<span class="badge expired">已过期</span>';
+    return '<span class="badge pending">待核对</span>';
   }
 
   function renderStats() {
@@ -1004,9 +1136,13 @@
       const actions = canEdit()
         ? '<button class="btn ghost sm" data-act="status" data-id="' + r.id + '">' +
             (r.status === 'paid' ? '取消到账' : '标记到账') + '</button> ' +
-          '<button class="btn ghost sm" data-act="note" data-id="' + r.id + '">备注</button> ' +
+          '<button class="btn ghost sm" data-act="detail" data-id="' + r.id + '">详情' +
+            (r.proof ? ' · 凭证' : '') + '</button> ' +
           '<button class="btn ghost sm" data-act="del" data-id="' + r.id + '">删除</button>'
-        : '';
+        : '<button class="btn ghost sm" data-act="detail" data-id="' + r.id + '">详情</button>';
+      const noteHtml =
+        (r.note ? esc(r.note) : '<span style="color:#c9c9c9">—</span>') +
+        (r.adminNote ? '<div style="color:#8a8a8a;font-size:11.5px;margin-top:2px">内：' + esc(r.adminNote) + '</div>' : '');
       tr.innerHTML =
         sel +
         '<td class="oid">' + esc(r.order) + '</td>' +
@@ -1014,8 +1150,7 @@
         '<td class="num">¥' + (Number(r.amount) || 0) + '</td>' +
         '<td>' + statusBadge(r.status) + '</td>' +
         '<td>' + (r.source ? esc(r.source) : '—') + '</td>' +
-        '<td style="white-space:normal;max-width:220px">' +
-          (r.note ? esc(r.note) : '<span style="color:#c9c9c9">—</span>') + '</td>' +
+        '<td style="white-space:normal;max-width:220px">' + noteHtml + '</td>' +
         '<td>' + timeText(r.createdMs) + '</td>' +
         '<td>' + actions + '</td>';
       body.appendChild(tr);
@@ -1039,22 +1174,102 @@
     }
   }
 
-  async function editNote(id) {
-    const order = state.orders.find(o => o.id === id);
-    if (!order) return;
-    const note = window.prompt('输入备注（最多 200 字，留空则清除）：', order.note || '');
-    if (note === null) return;
+  let dialogOrderId = null;
+
+  function renderProof(o) {
+    $('proofBox').innerHTML = o.proof
+      ? '<img src="/api/orders/' + o.id + '/proof?t=' + Date.now() + '" alt="到账凭证">'
+      : '<span class="proof-empty">暂无凭证</span>';
+  }
+
+  function openOrderDialog(id) {
+    const o = state.orders.find(x => x.id === id);
+    if (!o) return;
+    dialogOrderId = id;
+    $('orderMeta').innerHTML =
+      '订单号 <b>' + esc(o.order) + '</b> · ' + esc(o.project || '—') +
+      ' · ¥<b>' + (Number(o.amount) || 0) + '</b> · ' + statusBadge(o.status) +
+      '<br>生成 ' + timeText(o.createdMs) + (o.paidMs ? ' · 到账 ' + timeText(o.paidMs) : '');
+    $('orderNote').value = o.note || '';
+    $('orderAdminNote').value = o.adminNote || '';
+    $('orderNote').readOnly = !canEdit();
+    $('orderAdminNote').readOnly = !canEdit();
+    $('orderSave').hidden = !canEdit();
+    $('proofPick').hidden = !canEdit();
+    $('proofDel').hidden = !canEdit() || !o.proof;
+    renderProof(o);
+    $('orderDialog').hidden = false;
+  }
+
+  function closeOrderDialog() {
+    $('orderDialog').hidden = true;
+    dialogOrderId = null;
+  }
+
+  $('orderSave').addEventListener('click', async () => {
+    if (!dialogOrderId) return;
     try {
-      const data = await apiJson('/api/orders/' + id, {
-        method: 'PATCH', body: JSON.stringify({ note })
+      const data = await apiJson('/api/orders/' + dialogOrderId, {
+        method: 'PATCH',
+        body: JSON.stringify({ note: $('orderNote').value, adminNote: $('orderAdminNote').value })
       });
-      order.note = data.note || '';
+      const o = state.orders.find(x => x.id === dialogOrderId);
+      if (o) { o.note = data.note || ''; o.adminNote = data.adminNote || ''; }
       renderOrders();
-      toast(order.note ? '备注已保存' : '备注已清除');
+      closeOrderDialog();
+      toast('已保存');
     } catch (e) {
       toast(e.message || '保存失败');
     }
-  }
+  });
+
+  $('proofPick').addEventListener('click', () => $('proofFile').click());
+
+  $('proofFile').addEventListener('change', async e => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file || !dialogOrderId) return;
+    if (file.size > 2.5 * 1024 * 1024) { toast('图片需小于 2.5MB'); return; }
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(file);
+    });
+    try {
+      const res = await apiJson('/api/orders/' + dialogOrderId + '/proof', {
+        method: 'POST', body: JSON.stringify({ data: dataUrl })
+      });
+      const o = state.orders.find(x => x.id === dialogOrderId);
+      if (o) o.proof = res.proof;
+      $('proofDel').hidden = false;
+      renderProof(o || { id: dialogOrderId, proof: res.proof });
+      renderOrders();
+      toast('凭证已上传');
+    } catch (err) {
+      toast(err.message || '上传失败');
+    }
+  });
+
+  $('proofDel').addEventListener('click', async () => {
+    if (!dialogOrderId || !window.confirm('确定删除这张凭证吗？')) return;
+    try {
+      await apiJson('/api/orders/' + dialogOrderId + '/proof', { method: 'DELETE' });
+      const o = state.orders.find(x => x.id === dialogOrderId);
+      if (o) o.proof = '';
+      $('proofDel').hidden = true;
+      renderProof(o || { id: dialogOrderId, proof: '' });
+      renderOrders();
+      toast('凭证已删除');
+    } catch (e) {
+      toast(e.message || '删除失败');
+    }
+  });
+
+  $('orderCancel').addEventListener('click', closeOrderDialog);
+  $('orderDialog').addEventListener('click', e => {
+    if (e.target === $('orderDialog')) closeOrderDialog();
+  });
 
   async function deleteOrder(id) {
     if (!window.confirm('确定删除这条记录吗？删除后无法恢复。')) return;
@@ -1072,10 +1287,11 @@
   function exportCsv() {
     const rows = currentRows();
     if (!rows.length) { toast('没有可导出的记录'); return; }
-    const head = ['订单号', '项目', '金额', '状态', '来源', '备注', '生成时间', '到账时间'];
+    const head = ['订单号', '项目', '金额', '状态', '来源', '备注', '内部备注', '生成时间', '到账时间'];
     const lines = rows.map(r =>
-      [r.order, r.project || '', r.amount, r.status === 'paid' ? '已到账' : '待核对',
-        r.source || '', r.note || '', timeText(r.createdMs), r.paidMs ? timeText(r.paidMs) : '']
+      [r.order, r.project || '', r.amount,
+        r.status === 'paid' ? '已到账' : (r.status === 'expired' ? '已过期' : '待核对'),
+        r.source || '', r.note || '', r.adminNote || '', timeText(r.createdMs), r.paidMs ? timeText(r.paidMs) : '']
         .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
     );
     const csv = '\ufeff' + head.join(',') + '\n' + lines.join('\n');
@@ -1094,32 +1310,59 @@
 
   /* ---------- 数据看板 ---------- */
 
+  function fmtMoney(n) {
+    return Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+  }
+
+  async function loadSummary() {
+    try { state.summary = await apiJson('/api/stats/summary'); } catch (e) {}
+    renderDashboard();
+  }
+
   function renderDashboard() {
     const orders = state.orders || [];
-    let sum = 0, paidSum = 0, pending = 0;
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    let todayCount = 0, todaySum = 0;
+    const s = state.summary;
 
-    orders.forEach(o => {
-      const amt = Number(o.amount) || 0;
-      sum += amt;
-      if (o.status === 'paid') paidSum += amt; else pending += 1;
-      if (o.createdMs >= todayStart.getTime()) { todayCount += 1; todaySum += amt; }
-    });
+    if (s) {
+      $('dashCount').innerHTML = s.totalCount + '<small>笔</small>';
+      $('dashSum').textContent = fmtMoney(s.totalSum);
+      $('dashTodayCount').innerHTML = s.todayCount + '<small>笔</small>';
+      $('dashTodaySum').textContent = fmtMoney(s.todaySum);
+      $('dashMonthSum').textContent = fmtMoney(s.monthSum);
+      $('dashMonthCount').innerHTML = s.monthCount + '<small>笔</small>';
+      $('dashAvg').textContent = fmtMoney(s.avg);
+      $('dashPaidSum').textContent = fmtMoney(s.paidSum);
+      $('dashPending').innerHTML = s.pendingCount + '<small>笔</small>';
+      $('dashExpired').innerHTML = s.expiredCount + '<small>笔</small>';
+    } else {
+      let sum = 0, paidSum = 0, pending = 0, expired = 0;
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      let todayCount = 0, todaySum = 0;
+      orders.forEach(o => {
+        const amt = Number(o.amount) || 0;
+        sum += amt;
+        if (o.status === 'paid') paidSum += amt;
+        else if (o.status === 'expired') expired += 1;
+        else pending += 1;
+        if (o.createdMs >= todayStart.getTime()) { todayCount += 1; todaySum += amt; }
+      });
+      $('dashCount').innerHTML = orders.length + '<small>笔</small>';
+      $('dashSum').textContent = fmtMoney(sum);
+      $('dashTodayCount').innerHTML = todayCount + '<small>笔</small>';
+      $('dashTodaySum').textContent = fmtMoney(todaySum);
+      $('dashMonthSum').textContent = fmtMoney(0);
+      $('dashMonthCount').innerHTML = '0<small>笔</small>';
+      $('dashAvg').textContent = orders.length ? fmtMoney(sum / orders.length) : '0';
+      $('dashPaidSum').textContent = fmtMoney(paidSum);
+      $('dashPending').innerHTML = pending + '<small>笔</small>';
+      $('dashExpired').innerHTML = expired + '<small>笔</small>';
+    }
 
-    $('dashCount').innerHTML = orders.length + '<small>笔</small>';
-    $('dashSum').textContent = sum.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-    $('dashTodayCount').innerHTML = todayCount + '<small>笔</small>';
-    $('dashTodaySum').textContent = todaySum.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-    $('dashPaidSum').textContent = paidSum.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-    $('dashPending').innerHTML = pending + '<small>笔</small>';
-
-    renderChart(orders);
+    renderChart(orders, Number($('chartRange').value) || 14);
     renderProjectBars(orders);
   }
 
-  function renderChart(orders) {
-    const days = 14;
+  function renderChart(orders, days) {
     const base = new Date(); base.setHours(0, 0, 0, 0);
     const buckets = [];
     for (let i = days - 1; i >= 0; i--) {
@@ -1341,6 +1584,57 @@
     }
   });
 
+  /* ---------- 两步验证 ---------- */
+
+  function renderTotpState() {
+    const on = !!(state.me && state.me.totpEnabled);
+    $('totpStatus').innerHTML = on
+      ? '当前状态：<b style="color:#2e8b57">已开启</b>，登录时需要输入动态验证码。'
+      : '当前状态：<b>未开启</b>。开启后即使密码泄露，也需要手机验证码才能登录。';
+    $('totpSetupBtn').hidden = on;
+    $('totpDisableBtn').hidden = !on;
+    if (on) $('totpSetupBox').hidden = true;
+  }
+
+  $('totpSetupBtn').addEventListener('click', async () => {
+    try {
+      const res = await apiJson('/api/me/2fa/setup', { method: 'POST', body: '{}' });
+      $('totpSecret').textContent = res.secret;
+      $('totpCode').value = '';
+      $('totpSetupBox').hidden = false;
+      toast('已生成密钥，请添加到验证器');
+    } catch (e) {
+      toast(e.message || '生成失败');
+    }
+  });
+
+  $('totpEnableBtn').addEventListener('click', async () => {
+    const code = $('totpCode').value.trim();
+    if (!/^\d{6}$/.test(code)) { toast('请输入 6 位验证码'); return; }
+    try {
+      await apiJson('/api/me/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) });
+      state.me.totpEnabled = true;
+      $('totpSetupBox').hidden = true;
+      renderTotpState();
+      toast('两步验证已开启');
+    } catch (e) {
+      toast(e.message || '开启失败');
+    }
+  });
+
+  $('totpDisableBtn').addEventListener('click', async () => {
+    const password = window.prompt('输入当前账号的密码以关闭两步验证：');
+    if (!password) return;
+    try {
+      await apiJson('/api/me/2fa/disable', { method: 'POST', body: JSON.stringify({ password }) });
+      state.me.totpEnabled = false;
+      renderTotpState();
+      toast('两步验证已关闭');
+    } catch (e) {
+      toast(e.message || '关闭失败');
+    }
+  });
+
   /* ---------- 日志 ---------- */
 
   async function loadLogs(page) {
@@ -1445,9 +1739,69 @@
     $('importText').value = '';
     $('importResult').hidden = true;
     $('importResult').innerHTML = '';
+    $('importPreview').hidden = true;
+    $('importPreview').innerHTML = '';
+    $('importSubmit').hidden = true;
     $('importDialog').hidden = false;
+    loadBatches();
   }
   function closeImport() { $('importDialog').hidden = true; }
+
+  async function loadBatches() {
+    try {
+      const data = await apiJson('/api/orders/imports');
+      const list = data.batches || [];
+      $('batchHistory').innerHTML = list.length
+        ? list.map(b =>
+            '<li><span>' + esc(b.actor || '—') + ' · ' + b.csvRows + ' 行 / 匹配 ' + b.matched +
+            ' / 到账 ' + b.updated + (b.undone ? ' · <b style="color:#999">已撤销</b>' : '') +
+            '<div class="t">' + timeText(b.createdMs) + '</div></span>' +
+            (!b.undone && canEdit()
+              ? '<button class="btn ghost sm" data-undo="' + b.id + '">撤销</button>'
+              : '') + '</li>'
+          ).join('')
+        : '<li style="color:#bbb">暂无导入记录</li>';
+    } catch (e) { /* 静默 */ }
+  }
+
+  async function previewImport() {
+    const csv = $('importText').value;
+    if (!csv.trim()) { toast('请先粘贴 CSV 内容'); return; }
+    $('importPreviewBtn').disabled = true;
+    try {
+      const res = await apiJson('/api/orders/import/preview', {
+        method: 'POST', body: JSON.stringify({ csv })
+      });
+      let html = '<div style="margin-top:12px;font-size:13px">识别 <b>' + res.csvRows + '</b> 行，匹配 <b>' +
+        res.matched + '</b> 笔，将标记到账 <b style="color:#16a34a">' + res.toUpdate + '</b> 笔' +
+        (res.skipped ? '，已到账跳过 ' + res.skipped + ' 笔' : '') + '</div>';
+
+      if (res.items.length) {
+        html += '<div class="preview-table"><table><thead><tr><th>订单号</th><th>项目</th><th>金额</th><th>对账时间</th><th>结果</th></tr></thead><tbody>' +
+          res.items.map(i =>
+            '<tr><td>' + esc(i.order) + '</td><td>' + esc(i.project) + '</td><td>¥' + i.amount +
+            '</td><td>' + esc(i.csvTime || '—') + '</td><td>' +
+            (i.action === 'paid' ? '<span style="color:#16a34a">将标记到账</span>' : '<span style="color:#b7791f">已是到账，跳过</span>') +
+            '</td></tr>'
+          ).join('') + '</tbody></table></div>';
+        if (res.items.length < res.matched) html += '<div style="font-size:12px;color:#999;margin-top:6px">仅显示前 ' + res.items.length + ' 笔</div>';
+      }
+      if (res.unmatchedCsvCount) {
+        html += '<div class="warn" style="margin-top:8px">对账单中 ' + res.unmatchedCsvCount + ' 行未匹配到本地订单</div>';
+      }
+      if (res.unmatchedOrdersCount) {
+        html += '<div class="warn" style="margin-top:6px">还有 ' + res.unmatchedOrdersCount + ' 笔待核对订单未出现在对账单中</div>';
+      }
+      $('importPreview').innerHTML = html;
+      $('importPreview').hidden = false;
+      $('importSubmit').hidden = res.toUpdate === 0;
+      $('importResult').hidden = true;
+    } catch (e) {
+      toast(e.message || '预览失败');
+    } finally {
+      $('importPreviewBtn').disabled = false;
+    }
+  }
 
   async function runImport() {
     const csv = $('importText').value;
@@ -1477,13 +1831,28 @@
       }
       $('importResult').innerHTML = html;
       $('importResult').hidden = false;
-      await loadOrders();
+      $('importPreview').hidden = true;
+      $('importSubmit').hidden = true;
+      await Promise.all([loadOrders(), loadBatches()]);
       renderDashboard();
+      toast('已写入 ' + res.updated + ' 笔到账');
     } catch (e) {
       $('importResult').innerHTML = '<div class="warn">' + esc(e.message || '导入失败') + '</div>';
       $('importResult').hidden = false;
     } finally {
       $('importSubmit').disabled = false;
+    }
+  }
+
+  async function undoBatch(id) {
+    if (!window.confirm('撤销这个导入批次？会把该批次标记的订单恢复到导入前的状态。')) return;
+    try {
+      const res = await apiJson('/api/orders/import/' + id + '/undo', { method: 'POST', body: '{}' });
+      await Promise.all([loadOrders(), loadBatches()]);
+      renderDashboard();
+      toast('已撤销，恢复 ' + res.reverted + ' 笔' + (res.skipped ? '（跳过 ' + res.skipped + ' 笔已被再次修改的）' : ''));
+    } catch (e) {
+      toast(e.message || '撤销失败');
     }
   }
 
@@ -1516,6 +1885,11 @@
     $('backupEnabled').value = cfg.enabled ? '1' : '0';
     $('backupHour').value = String(cfg.hour == null ? 3 : cfg.hour);
     $('backupKeep').value = cfg.keepDays == null ? 30 : cfg.keepDays;
+    const remote = cfg.remote || { type: 'none' };
+    $('remoteType').value = remote.type === 'webdav' ? 'webdav' : 'none';
+    $('remoteUrl').value = remote.url || '';
+    $('remoteUser').value = remote.username || '';
+    $('remotePass').value = remote.password || '';
     const list = state.backup.backups || [];
     const ul = $('backupList');
     ul.innerHTML = '';
@@ -1525,6 +1899,7 @@
       li.innerHTML = '<div><b>' + esc(b.file) + '</b><div class="meta">' + fmtSize(b.size) + ' · ' + timeText(b.mtime) + '</div></div>' +
         '<div class="row" style="margin:0">' +
           '<a class="btn ghost sm" href="/api/backups/' + encodeURIComponent(b.file) + '" target="_blank" rel="noopener">下载</a>' +
+          (isAdmin() ? '<button class="btn ghost sm" data-bkrestore="' + esc(b.file) + '">恢复</button>' : '') +
           (isAdmin() ? '<button class="btn danger sm" data-bkdel="' + esc(b.file) + '">删除</button>' : '') +
         '</div>';
       ul.appendChild(li);
@@ -1534,10 +1909,11 @@
   /* ---------- 事件绑定 ---------- */
 
   $('dashRefresh').addEventListener('click', async () => {
-    await Promise.all([loadOrders(), loadTraffic()]);
+    await Promise.all([loadOrders(), loadTraffic(), loadSummary()]);
     toast('已刷新');
   });
   $('trafficRefresh').addEventListener('click', async () => { await loadTraffic(); toast('已刷新'); });
+  $('chartRange').addEventListener('change', renderDashboard);
   $('refreshBtn').addEventListener('click', async () => { await loadOrders(); toast('已刷新'); });
   $('csvBtn').addEventListener('click', exportCsv);
 
@@ -1557,19 +1933,30 @@
   $('projectFilter').addEventListener('change', renderOrders);
   $('statusFilter').addEventListener('change', renderOrders);
   $('timeFilter').addEventListener('change', renderOrders);
+  $('minAmount').addEventListener('input', renderOrders);
+  $('maxAmount').addEventListener('input', renderOrders);
 
   $('orderBody').addEventListener('click', e => {
     const btn = e.target.closest('button[data-act]');
     if (!btn) return;
     const id = Number(btn.dataset.id);
     if (btn.dataset.act === 'status') toggleStatus(id);
-    if (btn.dataset.act === 'note') editNote(id);
+    if (btn.dataset.act === 'detail') openOrderDialog(id);
     if (btn.dataset.act === 'del') deleteOrder(id);
   });
 
   $('importBtn').addEventListener('click', openImport);
   $('importCancel').addEventListener('click', closeImport);
+  $('importPreviewBtn').addEventListener('click', previewImport);
   $('importSubmit').addEventListener('click', runImport);
+  $('importText').addEventListener('input', () => {
+    $('importPreview').hidden = true;
+    $('importSubmit').hidden = true;
+  });
+  $('batchHistory').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-undo]');
+    if (btn) undoBatch(Number(btn.dataset.undo));
+  });
 
   $('selAll').addEventListener('change', e => {
     const rows = currentRows();
@@ -1606,17 +1993,51 @@
     const body = {
       enabled: $('backupEnabled').value === '1',
       hour: Number($('backupHour').value) || 0,
-      keepDays: Math.max(1, Math.min(3650, Number($('backupKeep').value) || 30))
+      keepDays: Math.max(1, Math.min(3650, Number($('backupKeep').value) || 30)),
+      remote: {
+        type: $('remoteType').value,
+        url: $('remoteUrl').value.trim(),
+        username: $('remoteUser').value.trim(),
+        password: $('remotePass').value
+      }
     };
+    if (body.remote.type !== 'none' && (!body.remote.url || !body.remote.username || !body.remote.password)) {
+      toast('异地同步需填写目录地址、账号和密码');
+      return;
+    }
     try {
       const res = await apiJson('/api/backups/config', { method: 'PUT', body: JSON.stringify(body) });
       state.backup.config = res.config;
       renderBackups();
       $('backupStamp').textContent = '已保存 ' + timeText(Date.now());
-      toast('备份设置已保存');
+      toast(res.remoteError ? '已保存，但异地同步失败：' + res.remoteError : '备份设置已保存');
+      await loadBackups();
     } catch (e) { toast(e.message || '保存失败'); }
   });
   $('backupList').addEventListener('click', async e => {
+    const restoreBtn = e.target.closest('button[data-bkrestore]');
+    if (restoreBtn) {
+      const file = restoreBtn.dataset.bkrestore;
+      const input = window.prompt(
+        '恢复会用备份 ' + file + ' 覆盖当前全部订单，并恢复到备份时的页面/通知配置。\n恢复前会自动再备份一次当前数据。\n\n请输入 RESTORE 确认：'
+      );
+      if (input !== 'RESTORE') { if (input !== null) toast('未输入 RESTORE，已取消'); return; }
+      restoreBtn.disabled = true;
+      try {
+        const res = await apiJson('/api/backups/' + encodeURIComponent(file) + '/restore', {
+          method: 'POST', body: JSON.stringify({ confirm: 'RESTORE' })
+        });
+        await Promise.all([loadOrders(), loadBackups(), loadConfig()]);
+        renderDashboard();
+        toast('已恢复 ' + res.restored + ' 条订单');
+      } catch (err) {
+        toast(err.message || '恢复失败');
+      } finally {
+        restoreBtn.disabled = false;
+      }
+      return;
+    }
+
     const btn = e.target.closest('button[data-bkdel]');
     if (!btn) return;
     if (!window.confirm('确定删除备份 ' + btn.dataset.bkdel + ' 吗？')) return;

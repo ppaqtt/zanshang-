@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -10,12 +11,14 @@ import {
   setSessionCookie, clearSessionCookie, currentUser, rateLimit
 } from './auth.js';
 import {
-  createBackup, listBackups, backupPath, deleteBackup, pruneOld,
-  readBackupConfig, scheduleBackups
+  createBackup, listBackups, backupPath, readBackupFile, deleteBackup, pruneOld,
+  readBackupConfig, scheduleBackups, setNotifyHook
 } from './backup.js';
+import { generateSecret, verifyTotp, otpauthUri } from './totp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
+const UPLOAD_DIR = path.resolve(__dirname, '..', 'uploads');
 const PORT = Number(process.env.PORT || 3000);
 
 const DUMMY_HASH = bcrypt.hashSync('dummy-password-for-timing', 10);
@@ -124,6 +127,10 @@ function validateConfig(body) {
   const theme = validateTheme(body.theme);
   if (!theme) return null;
 
+  let expireHours = body.expireHours === undefined ? DEFAULT_CONFIG.expireHours : Number(body.expireHours);
+  if (!Number.isFinite(expireHours) || expireHours < 0 || expireHours > 720) return null;
+  expireHours = Math.round(expireHours);
+
   const amounts = Array.isArray(body.amounts)
     ? Array.from(new Set(body.amounts.map(Number).filter(n => Number.isFinite(n) && n > 0 && n <= 1000000)
         .map(n => Math.round(n * 100) / 100))).sort((a, b) => a - b)
@@ -145,7 +152,7 @@ function validateConfig(body) {
     if (!/^[A-Z]{1,10}$/.test(prefix.toUpperCase())) return null;
     projects.push({ id, name, code, prefix: prefix.toUpperCase(), qr, avatar, sub });
   }
-  return { amounts, theme, projects };
+  return { amounts, theme, projects, expireHours };
 }
 
 async function readSetting(key, fallback) {
@@ -169,6 +176,7 @@ async function readConfig() {
   const parsed = await readSetting('page_config', null);
   if (parsed && Array.isArray(parsed.amounts) && Array.isArray(parsed.projects)) {
     if (!parsed.theme) parsed.theme = DEFAULT_CONFIG.theme;
+    if (typeof parsed.expireHours !== 'number') parsed.expireHours = DEFAULT_CONFIG.expireHours;
     return parsed;
   }
   return DEFAULT_CONFIG;
@@ -225,6 +233,20 @@ async function sendWebhook(cfg, text) {
     clearTimeout(timer);
   }
 }
+
+/* 系统级告警（备份失败、异地同步失败、登录锁定等） */
+async function pushNotify(text) {
+  try {
+    const cfg = await readSetting('notify_config', DEFAULT_NOTIFY);
+    if (!cfg || cfg.type === 'none' || !cfg.url) return;
+    const result = await sendWebhook(cfg, '【赞赏系统】' + text);
+    if (!result.ok) console.error('[notify] 推送失败：', result.error || result.status);
+  } catch (e) {
+    console.error('[notify]', e.message);
+  }
+}
+
+setNotifyHook(text => { pushNotify(text); });
 
 /* ---------- 健康检查 ---------- */
 
@@ -319,35 +341,117 @@ app.get('/api/stats/daily', requireUser, async (req, res) => {
   }
 });
 
+app.get('/api/stats/summary', requireUser, async (req, res) => {
+  try {
+    await expireStale(false);
+    const [[row]] = await pool.query(
+      `SELECT COUNT(*) AS total_count,
+              COALESCE(SUM(amount), 0) AS total_sum,
+              COALESCE(SUM(CASE WHEN status = 'paid' THEN amount END), 0) AS paid_sum,
+              COALESCE(SUM(status = 'paid'), 0) AS paid_count,
+              COALESCE(SUM(status = 'pending'), 0) AS pending_count,
+              COALESCE(SUM(status = 'expired'), 0) AS expired_count,
+              COALESCE(SUM(DATE(created_at) = CURDATE()), 0) AS today_count,
+              COALESCE(SUM(CASE WHEN DATE(created_at) = CURDATE() THEN amount ELSE 0 END), 0) AS today_sum,
+              COALESCE(SUM(created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')), 0) AS month_count,
+              COALESCE(SUM(CASE WHEN created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS month_sum
+       FROM orders`
+    );
+    const r2 = v => Math.round(Number(v) * 100) / 100;
+    const totalCount = Number(row.total_count);
+    const totalSum = Number(row.total_sum);
+    res.json({
+      totalCount,
+      totalSum: r2(totalSum),
+      paidSum: r2(row.paid_sum),
+      paidCount: Number(row.paid_count),
+      pendingCount: Number(row.pending_count),
+      expiredCount: Number(row.expired_count),
+      todayCount: Number(row.today_count),
+      todaySum: r2(row.today_sum),
+      monthCount: Number(row.month_count),
+      monthSum: r2(row.month_sum),
+      avg: totalCount ? r2(totalSum / totalCount) : 0,
+      paidAvg: Number(row.paid_count) ? r2(Number(row.paid_sum) / Number(row.paid_count)) : 0
+    });
+  } catch (e) {
+    console.error('[stats:summary]', e.message);
+    res.status(500).json({ error: '读取失败' });
+  }
+});
+
 /* ---------- 登录 ---------- */
+
+const LOGIN_MAX_FAIL = 5;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const loginFails = new Map(); // key: ip|username -> { count, lockUntil }
+
+function loginFailKey(ip, username) {
+  return String(ip) + '|' + String(username || '').toLowerCase();
+}
+
+function registerLoginFail(key, username, ip) {
+  const now = Date.now();
+  const item = loginFails.get(key) || { count: 0, lockUntil: 0 };
+  if (item.lockUntil && item.lockUntil <= now) { item.count = 0; item.lockUntil = 0; }
+  item.count += 1;
+  if (item.count >= LOGIN_MAX_FAIL) {
+    item.lockUntil = now + LOGIN_LOCK_MS;
+    item.count = 0;
+    pushNotify('账号 ' + username + ' 连续登录失败 ' + LOGIN_MAX_FAIL + ' 次，已锁定 15 分钟（IP ' + ip + '）');
+  }
+  loginFails.set(key, item);
+  return item;
+}
 
 app.post('/api/login', async (req, res) => {
   const ip = req.ip || 'unknown';
-  if (!rateLimit('login:' + ip, 10, 15 * 60 * 1000)) {
+  if (!rateLimit('login:' + ip, 30, 15 * 60 * 1000)) {
     return res.status(429).json({ error: '尝试次数过多，请 15 分钟后再试' });
   }
 
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
+  const code = String(req.body?.code || '').trim();
   if (!username || !password || username.length > 50 || password.length > 200) {
     return res.status(400).json({ error: '请输入用户名和密码' });
   }
 
+  const key = loginFailKey(ip, username);
+  const fail = loginFails.get(key);
+  if (fail && fail.lockUntil > Date.now()) {
+    const mins = Math.ceil((fail.lockUntil - Date.now()) / 60000);
+    return res.status(429).json({ error: '该账号已锁定，请 ' + mins + ' 分钟后再试' });
+  }
+
   try {
     const [rows] = await pool.query(
-      'SELECT id, username, password_hash, role FROM admins WHERE username = ? LIMIT 1',
+      'SELECT id, username, password_hash, role, totp_secret, totp_enabled FROM admins WHERE username = ? LIMIT 1',
       [username]
     );
     const row = rows[0];
     const ok = await bcrypt.compare(password, row ? row.password_hash : DUMMY_HASH);
     if (!row || !ok) {
+      registerLoginFail(key, username, ip);
       await audit(username, 'login_fail', '密码错误或账号不存在', ip);
       return res.status(401).json({ error: '用户名或密码错误' });
     }
 
+    if (row.totp_enabled) {
+      if (!code) {
+        return res.status(401).json({ error: '请输入动态验证码', need2fa: true });
+      }
+      if (!verifyTotp(row.totp_secret, code)) {
+        registerLoginFail(key, username, ip);
+        await audit(username, 'login_fail', '动态验证码错误', ip);
+        return res.status(401).json({ error: '动态验证码不正确', need2fa: true });
+      }
+    }
+
+    loginFails.delete(key);
     setSessionCookie(res, row);
     await audit(row.username, 'login', '登录成功（' + row.role + '）', ip);
-    res.json({ ok: true, username: row.username, role: row.role });
+    res.json({ ok: true, username: row.username, role: row.role, totpEnabled: !!row.totp_enabled });
   } catch (e) {
     console.error('[login]', e.message);
     res.status(500).json({ error: '服务异常，请稍后再试' });
@@ -359,8 +463,59 @@ app.post('/api/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/me', requireUser, (req, res) => {
-  res.json({ username: req.user.username, role: req.user.role });
+app.get('/api/me', requireUser, async (req, res) => {
+  let totpEnabled = false;
+  try {
+    const [rows] = await pool.query('SELECT totp_enabled FROM admins WHERE id = ? LIMIT 1', [req.user.id]);
+    totpEnabled = !!(rows[0] && rows[0].totp_enabled);
+  } catch (e) {}
+  res.json({ username: req.user.username, role: req.user.role, totpEnabled });
+});
+
+/* ---------- 两步验证（TOTP） ---------- */
+
+app.post('/api/me/2fa/setup', requireUser, async (req, res) => {
+  try {
+    const secret = generateSecret();
+    await pool.query(
+      'UPDATE admins SET totp_secret = ?, totp_enabled = 0 WHERE id = ?', [secret, req.user.id]
+    );
+    res.json({ ok: true, secret, uri: otpauthUri(secret, req.user.username) });
+  } catch (e) {
+    console.error('[2fa:setup]', e.message);
+    res.status(500).json({ error: '生成失败' });
+  }
+});
+
+app.post('/api/me/2fa/enable', requireUser, async (req, res) => {
+  const code = String(req.body?.code || '').trim();
+  try {
+    const [rows] = await pool.query('SELECT totp_secret FROM admins WHERE id = ? LIMIT 1', [req.user.id]);
+    const secret = rows[0] && rows[0].totp_secret;
+    if (!secret) return res.status(400).json({ error: '请先获取密钥' });
+    if (!verifyTotp(secret, code)) return res.status(400).json({ error: '验证码不正确，请确认手机时间准确' });
+    await pool.query('UPDATE admins SET totp_enabled = 1 WHERE id = ?', [req.user.id]);
+    await audit(req.user.username, 'totp_enable', '开启两步验证', req.ip);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[2fa:enable]', e.message);
+    res.status(500).json({ error: '开启失败' });
+  }
+});
+
+app.post('/api/me/2fa/disable', requireUser, async (req, res) => {
+  const password = String(req.body?.password || '');
+  try {
+    const [rows] = await pool.query('SELECT password_hash FROM admins WHERE id = ? LIMIT 1', [req.user.id]);
+    const ok = rows.length && await bcrypt.compare(password, rows[0].password_hash);
+    if (!ok) return res.status(400).json({ error: '密码不正确' });
+    await pool.query('UPDATE admins SET totp_secret = NULL, totp_enabled = 0 WHERE id = ?', [req.user.id]);
+    await audit(req.user.username, 'totp_disable', '关闭两步验证', req.ip);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[2fa:disable]', e.message);
+    res.status(500).json({ error: '关闭失败' });
+  }
 });
 
 app.post('/api/me/password', requireUser, async (req, res) => {
@@ -442,6 +597,42 @@ app.post('/api/notify/test', requireUser, requireRole('admin'), async (req, res)
 
 /* ---------- 订单 ---------- */
 
+/* 超时未到账自动归档；由列表请求与定时任务共同触发，60 秒内不重复扫描 */
+let lastExpireSweep = 0;
+async function expireStale(force) {
+  const now = Date.now();
+  if (!force && now - lastExpireSweep < 60000) return;
+  lastExpireSweep = now;
+  try {
+    const cfg = await readConfig();
+    const hours = Number(cfg.expireHours);
+    if (!Number.isFinite(hours) || hours <= 0) return;
+    const [r] = await pool.query(
+      "UPDATE orders SET status = 'expired' WHERE status = 'pending' AND created_at < DATE_SUB(NOW(), INTERVAL ? HOUR)",
+      [hours]
+    );
+    if (r.affectedRows) console.log('[orders] 已归档超时未到账 ' + r.affectedRows + ' 笔');
+  } catch (e) {
+    console.error('[orders:expire]', e.message);
+  }
+}
+
+app.get('/api/orders/status/:orderNo', async (req, res) => {
+  const ip = req.ip || 'unknown';
+  if (!rateLimit('ostatus:' + ip, 120, 60 * 1000)) return res.status(429).json({ error: '查询过于频繁' });
+  const orderNo = String(req.params.orderNo || '');
+  if (!/^[A-Za-z0-9-]{6,40}$/.test(orderNo)) return res.status(400).json({ error: '订单号不正确' });
+  try {
+    const [rows] = await pool.query('SELECT status FROM orders WHERE order_no = ? LIMIT 1', [orderNo]);
+    if (!rows.length) return res.json({ status: 'unknown' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ status: rows[0].status });
+  } catch (e) {
+    console.error('[orders:status]', e.message);
+    res.status(500).json({ error: '查询失败' });
+  }
+});
+
 app.post('/api/orders', async (req, res) => {
   const ip = req.ip || 'unknown';
   if (!rateLimit('order:' + ip, 60, 60 * 1000)) {
@@ -453,6 +644,8 @@ app.post('/api/orders', async (req, res) => {
   const amount = Number(req.body?.amount);
   let source = String(req.body?.source || '').trim().slice(0, 60);
   if (/[<>"']/.test(source)) source = '';
+  let note = String(req.body?.note || '').trim().slice(0, 100);
+  if (/[<>]/.test(note)) note = '';
 
   if (!/^[A-Za-z0-9-]{6,40}$/.test(orderNo)) {
     return res.status(400).json({ error: '订单号格式不正确' });
@@ -466,11 +659,11 @@ app.post('/api/orders', async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      'INSERT INTO orders (order_no, project, amount, source, ip) VALUES (?, ?, ?, ?, ?)',
-      [orderNo, project, amount.toFixed(2), source || null, ip.slice(0, 45)]
+      'INSERT INTO orders (order_no, project, amount, note, source, ip) VALUES (?, ?, ?, ?, ?, ?)',
+      [orderNo, project, amount.toFixed(2), note || null, source || null, ip.slice(0, 45)]
     );
 
-    notifyNewOrder({ orderNo, project, amount, source });
+    notifyNewOrder({ orderNo, project, amount, source, note });
 
     res.status(201).json({ ok: true, id: result.insertId });
   } catch (e) {
@@ -479,12 +672,13 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-async function notifyNewOrder({ orderNo, project, amount, source }) {
+async function notifyNewOrder({ orderNo, project, amount, source, note }) {
   try {
     const cfg = await readSetting('notify_config', DEFAULT_NOTIFY);
     if (!cfg || cfg.type === 'none' || !cfg.url) return;
     const text = '【新赞赏】' + project + ' ¥' + amount + '\n' +
       '订单号：' + orderNo + '\n' +
+      (note ? '留言：' + note + '\n' : '') +
       (source ? '来源：' + source + '\n' : '') +
       '时间：' + new Date().toLocaleString('zh-CN');
     const result = await sendWebhook(cfg, text);
@@ -496,8 +690,9 @@ async function notifyNewOrder({ orderNo, project, amount, source }) {
 
 app.get('/api/orders', requireUser, async (req, res) => {
   try {
+    await expireStale(false);
     const [rows] = await pool.query(
-      `SELECT id, order_no, project, amount, status, note, source,
+      `SELECT id, order_no, project, amount, status, note, admin_note, proof, source,
               UNIX_TIMESTAMP(created_at) * 1000 AS created_ms,
               UNIX_TIMESTAMP(paid_at) * 1000 AS paid_ms
        FROM orders ORDER BY id DESC LIMIT 1000`
@@ -510,6 +705,8 @@ app.get('/api/orders', requireUser, async (req, res) => {
         amount: Number(r.amount),
         status: r.status,
         note: r.note || '',
+        adminNote: r.admin_note || '',
+        proof: r.proof || '',
         source: r.source || '',
         createdMs: Number(r.created_ms),
         paidMs: r.paid_ms == null ? null : Number(r.paid_ms)
@@ -528,10 +725,12 @@ app.patch('/api/orders/:id', requireUser, requireRole('admin', 'editor'), async 
   const body = req.body || {};
   const hasStatus = Object.prototype.hasOwnProperty.call(body, 'status');
   const hasNote = Object.prototype.hasOwnProperty.call(body, 'note');
-  if (!hasStatus && !hasNote) return res.status(400).json({ error: '没有需要修改的内容' });
+  const hasAdminNote = Object.prototype.hasOwnProperty.call(body, 'adminNote');
+  if (!hasStatus && !hasNote && !hasAdminNote) return res.status(400).json({ error: '没有需要修改的内容' });
 
   let status = null;
   let note = null;
+  let adminNote = null;
   if (hasStatus) {
     status = String(body.status);
     if (status !== 'paid' && status !== 'pending') return res.status(400).json({ error: '状态不正确' });
@@ -541,6 +740,12 @@ app.patch('/api/orders/:id', requireUser, requireRole('admin', 'editor'), async 
     if (note.length > 200) return res.status(400).json({ error: '备注最多 200 字' });
     if (/[<>]/.test(note)) return res.status(400).json({ error: '备注不能包含尖括号' });
     note = note || null;
+  }
+  if (hasAdminNote) {
+    adminNote = String(body.adminNote == null ? '' : body.adminNote).trim();
+    if (adminNote.length > 500) return res.status(400).json({ error: '内部备注最多 500 字' });
+    if (/[<>]/.test(adminNote)) return res.status(400).json({ error: '内部备注不能包含尖括号' });
+    adminNote = adminNote || null;
   }
 
   const sets = [];
@@ -553,6 +758,10 @@ app.patch('/api/orders/:id', requireUser, requireRole('admin', 'editor'), async 
   if (hasNote) {
     sets.push('note = ?');
     params.push(note);
+  }
+  if (hasAdminNote) {
+    sets.push('admin_note = ?');
+    params.push(adminNote);
   }
   params.push(id);
 
@@ -570,7 +779,16 @@ app.patch('/api/orders/:id', requireUser, requireRole('admin', 'editor'), async 
       await audit(req.user.username, 'order_note',
         '订单 #' + id + ' 备注：' + (note || '（清空）'), req.ip);
     }
-    res.json({ ok: true, status: hasStatus ? status : undefined, note: hasNote ? (note || '') : undefined });
+    if (hasAdminNote) {
+      await audit(req.user.username, 'order_admin_note',
+        '订单 #' + id + ' 内部备注：' + (adminNote || '（清空）'), req.ip);
+    }
+    res.json({
+      ok: true,
+      status: hasStatus ? status : undefined,
+      note: hasNote ? (note || '') : undefined,
+      adminNote: hasAdminNote ? (adminNote || '') : undefined
+    });
   } catch (e) {
     console.error('[orders:patch]', e.message);
     res.status(500).json({ error: '更新失败' });
@@ -598,6 +816,83 @@ app.delete('/api/orders', requireUser, requireRole('admin', 'editor'), async (re
   } catch (e) {
     console.error('[orders:clear]', e.message);
     res.status(500).json({ error: '清空失败' });
+  }
+});
+
+/* ---------- 到账凭证 ---------- */
+
+const PROOF_RE = /^[a-f0-9-]{36}\.(jpg|png|webp)$/;
+
+function ensureUploadDir() {
+  if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+app.post('/api/orders/:id/proof', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: '无效的记录' });
+
+  const data = String(req.body?.data || '');
+  const m = /^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/.exec(data);
+  if (!m) return res.status(400).json({ error: '请上传 png / jpg / webp 图片' });
+  const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
+  const buf = Buffer.from(m[2], 'base64');
+  if (!buf.length || buf.length > 2.8 * 1024 * 1024) {
+    return res.status(400).json({ error: '图片需小于 2.8MB' });
+  }
+
+  try {
+    const [rows] = await pool.query('SELECT proof FROM orders WHERE id = ? LIMIT 1', [id]);
+    if (!rows.length) return res.status(404).json({ error: '记录不存在' });
+
+    ensureUploadDir();
+    const file = randomUUID() + '.' + ext;
+    fs.writeFileSync(path.join(UPLOAD_DIR, file), buf);
+    await pool.query('UPDATE orders SET proof = ? WHERE id = ?', [file, id]);
+
+    const old = rows[0].proof;
+    if (old && PROOF_RE.test(old)) {
+      try { fs.unlinkSync(path.join(UPLOAD_DIR, old)); } catch (e) {}
+    }
+    await audit(req.user.username, 'order_proof', '订单 #' + id + ' 上传到账凭证', req.ip);
+    res.json({ ok: true, proof: file });
+  } catch (e) {
+    console.error('[orders:proof]', e.message);
+    res.status(500).json({ error: '上传失败' });
+  }
+});
+
+app.get('/api/orders/:id/proof', requireUser, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: '无效的记录' });
+  try {
+    const [rows] = await pool.query('SELECT proof FROM orders WHERE id = ? LIMIT 1', [id]);
+    const file = rows[0] && rows[0].proof;
+    if (!file || !PROOF_RE.test(file)) return res.status(404).json({ error: '没有凭证' });
+    const full = path.join(UPLOAD_DIR, file);
+    if (!fs.existsSync(full)) return res.status(404).json({ error: '文件不存在' });
+    res.sendFile(full);
+  } catch (e) {
+    console.error('[orders:proof:get]', e.message);
+    res.status(500).json({ error: '读取失败' });
+  }
+});
+
+app.delete('/api/orders/:id/proof', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: '无效的记录' });
+  try {
+    const [rows] = await pool.query('SELECT proof FROM orders WHERE id = ? LIMIT 1', [id]);
+    if (!rows.length) return res.status(404).json({ error: '记录不存在' });
+    const old = rows[0].proof;
+    if (old && PROOF_RE.test(old)) {
+      try { fs.unlinkSync(path.join(UPLOAD_DIR, old)); } catch (e) {}
+    }
+    await pool.query('UPDATE orders SET proof = NULL WHERE id = ?', [id]);
+    await audit(req.user.username, 'order_proof', '订单 #' + id + ' 删除到账凭证', req.ip);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[orders:proof:del]', e.message);
+    res.status(500).json({ error: '删除失败' });
   }
 });
 
@@ -680,67 +975,135 @@ function parseStatement(text) {
   return rows;
 }
 
-app.post('/api/orders/import', requireUser, requireRole('admin', 'editor'), async (req, res) => {
-  const csv = String(req.body?.csv || '');
-  if (csv.length > 4 * 1024 * 1024) return res.status(400).json({ error: '内容过大' });
-  const rows = parseStatement(csv);
-  if (!rows.length) return res.status(400).json({ error: '没有识别到有效行，请确认粘贴的是对账单 CSV' });
-  if (rows.length > 20000) return res.status(400).json({ error: '单次最多 20000 行' });
+async function loadOrdersForMatch() {
+  const [orders] = await pool.query(
+    `SELECT id, order_no, project, amount, status, note, paid_at AS paid_raw, created_at AS created_raw
+     FROM orders ORDER BY id ASC`
+  );
+  return orders;
+}
 
-  try {
-    const [orders] = await pool.query(
-      `SELECT id, order_no, project, amount, status, note, created_at AS created_raw
-       FROM orders ORDER BY id ASC`
-    );
+function matchStatement(rows, orders) {
+  const used = new Set();
+  const matched = [];
+  const unmatchedCsv = [];
 
-    const used = new Set();
-    const matched = [];
-    const unmatchedCsv = [];
+  for (const r of rows) {
+    const amt = parseAmount(r.amount);
+    const note = String(r.note || '');
+    const merchant = String(r.merchant || '');
+    let found = null;
 
-    for (const r of rows) {
-      const amt = parseAmount(r.amount);
-      const note = String(r.note || '');
-      const merchant = String(r.merchant || '');
-      let found = null;
-
-      if (!found) {
-        for (const o of orders) {
-          if (used.has(o.id)) continue;
-          if (note.indexOf(o.order_no) >= 0) { found = o; break; }
+    if (!found) {
+      for (const o of orders) {
+        if (used.has(o.id)) continue;
+        if (note.indexOf(o.order_no) >= 0) { found = o; break; }
+      }
+    }
+    if (!found && merchant) {
+      for (const o of orders) {
+        if (used.has(o.id)) continue;
+        if (merchant.trim() === o.order_no) { found = o; break; }
+      }
+    }
+    if (!found && Number.isFinite(amt)) {
+      let best = null, bestDt = Infinity;
+      const candidates = [];
+      const rMs = naiveMs(r.time);
+      for (const o of orders) {
+        if (used.has(o.id)) continue;
+        if (Math.abs(Number(o.amount) - amt) > 0.01) continue;
+        if (r.project && o.project) {
+          if (r.project.indexOf(o.project) < 0 && o.project.indexOf(r.project) < 0) continue;
+        }
+        candidates.push(o);
+        const oMs = naiveMs(o.created_raw);
+        if (!isNaN(oMs) && !isNaN(rMs)) {
+          const dt = Math.abs(oMs - rMs) / 1000;
+          if (dt <= 300 && dt < bestDt) { bestDt = dt; best = o; }
         }
       }
-      if (!found && merchant) {
-        for (const o of orders) {
-          if (used.has(o.id)) continue;
-          if (merchant.trim() === o.order_no) { found = o; break; }
-        }
-      }
-      if (!found && Number.isFinite(amt)) {
-        let best = null, bestDt = Infinity, candidates = [];
-        const rMs = naiveMs(r.time);
-        for (const o of orders) {
-          if (used.has(o.id)) continue;
-          if (Math.abs(Number(o.amount) - amt) > 0.01) continue;
-          if (r.project && o.project) {
-            if (r.project.indexOf(o.project) < 0 && o.project.indexOf(r.project) < 0) continue;
-          }
-          candidates.push(o);
-          const oMs = naiveMs(o.created_raw);
-          if (!isNaN(oMs) && !isNaN(rMs)) {
-            const dt = Math.abs(oMs - rMs) / 1000;
-            if (dt <= 300 && dt < bestDt) { bestDt = dt; best = o; }
-          }
-        }
-        // 时区无关兜底：同金额同项目仅有一笔时直接匹配
-        if (!best && candidates.length === 1) best = candidates[0];
-        found = best;
-      }
-
-      if (found) { used.add(found.id); matched.push({ row: r, order: found }); }
-      else { unmatchedCsv.push({ time: r.time, amount: r.amount, note: note.slice(0, 60) }); }
+      // 时区无关兜底：同金额同项目仅有一笔时直接匹配
+      if (!best && candidates.length === 1) best = candidates[0];
+      found = best;
     }
 
+    if (found) { used.add(found.id); matched.push({ row: r, order: found }); }
+    else { unmatchedCsv.push({ time: r.time, amount: r.amount, note: note.slice(0, 60) }); }
+  }
+
+  return { matched, unmatchedCsv, used };
+}
+
+function readImportCsv(req, res) {
+  const csv = String(req.body?.csv || '');
+  if (csv.length > 4 * 1024 * 1024) {
+    res.status(400).json({ error: '内容过大' });
+    return null;
+  }
+  const rows = parseStatement(csv);
+  if (!rows.length) {
+    res.status(400).json({ error: '没有识别到有效行，请确认粘贴的是对账单 CSV' });
+    return null;
+  }
+  if (rows.length > 20000) {
+    res.status(400).json({ error: '单次最多 20000 行' });
+    return null;
+  }
+  return rows;
+}
+
+/* 预览：只做匹配，不写库 */
+app.post('/api/orders/import/preview', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  const rows = readImportCsv(req, res);
+  if (!rows) return;
+  try {
+    const orders = await loadOrdersForMatch();
+    const { matched, unmatchedCsv, used } = matchStatement(rows, orders);
+
+    const items = matched.map(m => ({
+      id: m.order.id,
+      order: m.order.order_no,
+      project: m.order.project,
+      amount: Number(m.order.amount),
+      csvTime: m.row.time || '',
+      csvAmount: m.row.amount || '',
+      csvNote: m.row.note || '',
+      action: m.order.status === 'paid' ? 'skip' : 'paid'
+    }));
+
+    const unmatchedOrders = orders
+      .filter(o => !used.has(o.id) && o.status !== 'paid' && o.status !== 'expired')
+      .map(o => ({ order: o.order_no, project: o.project, amount: Number(o.amount) }));
+
+    res.json({
+      ok: true,
+      csvRows: rows.length,
+      matched: matched.length,
+      toUpdate: items.filter(i => i.action === 'paid').length,
+      skipped: items.filter(i => i.action === 'skip').length,
+      items: items.slice(0, 200),
+      unmatchedCsv: unmatchedCsv.slice(0, 50),
+      unmatchedCsvCount: unmatchedCsv.length,
+      unmatchedOrders: unmatchedOrders.slice(0, 50),
+      unmatchedOrdersCount: unmatchedOrders.length
+    });
+  } catch (e) {
+    console.error('[orders:import:preview]', e.message);
+    res.status(500).json({ error: '处理失败' });
+  }
+});
+
+app.post('/api/orders/import', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  const rows = readImportCsv(req, res);
+  if (!rows) return;
+
+  try {
+    const orders = await loadOrdersForMatch();
+    const { matched, unmatchedCsv, used } = matchStatement(rows, orders);
+
     let updated = 0, skippedAlreadyPaid = 0;
+    const changes = [];
     for (const m of matched) {
       if (m.order.status === 'paid') { skippedAlreadyPaid++; continue; }
       const paidAt = parseTime(m.row.time) ? String(m.row.time).trim() : null;
@@ -750,11 +1113,26 @@ app.post('/api/orders/import', requireUser, requireRole('admin', 'editor'), asyn
         'UPDATE orders SET status = ?, paid_at = ' + (paidAt ? '?' : 'NOW()') + ', note = ? WHERE id = ?',
         paidAt ? ['paid', paidAt, newNote, m.order.id] : ['paid', newNote, m.order.id]
       );
+      changes.push({
+        id: m.order.id,
+        prevStatus: m.order.status,
+        prevPaidAt: m.order.paid_raw == null ? null : String(m.order.paid_raw),
+        prevNote: m.order.note || null
+      });
       updated++;
     }
 
-    const unmatchedOrders = orders.filter(o => !used.has(o.id) && o.status !== 'paid')
+    const unmatchedOrders = orders.filter(o => !used.has(o.id) && o.status !== 'paid' && o.status !== 'expired')
       .map(o => ({ order: o.order_no, project: o.project, amount: Number(o.amount) }));
+
+    let batchId = null;
+    if (changes.length) {
+      const [ins] = await pool.query(
+        'INSERT INTO import_batches (actor, csv_rows, matched, updated, changes) VALUES (?, ?, ?, ?, ?)',
+        [req.user.username, rows.length, matched.length, updated, JSON.stringify(changes)]
+      );
+      batchId = ins.insertId;
+    }
 
     if (updated > 0 || matched.length > 0) {
       await audit(req.user.username, 'order_import',
@@ -763,6 +1141,7 @@ app.post('/api/orders/import', requireUser, requireRole('admin', 'editor'), asyn
 
     res.json({
       ok: true,
+      batchId,
       csvRows: rows.length,
       matched: matched.length,
       updated,
@@ -775,6 +1154,62 @@ app.post('/api/orders/import', requireUser, requireRole('admin', 'editor'), asyn
   } catch (e) {
     console.error('[orders:import]', e.message);
     res.status(500).json({ error: '处理失败' });
+  }
+});
+
+app.get('/api/orders/imports', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, actor, csv_rows, matched, updated, undone,
+              UNIX_TIMESTAMP(created_at) * 1000 AS created_ms
+       FROM import_batches ORDER BY id DESC LIMIT 20`
+    );
+    res.json({
+      batches: rows.map(r => ({
+        id: r.id,
+        actor: r.actor,
+        csvRows: r.csv_rows,
+        matched: r.matched,
+        updated: r.updated,
+        undone: !!r.undone,
+        createdMs: Number(r.created_ms)
+      }))
+    });
+  } catch (e) {
+    console.error('[orders:imports]', e.message);
+    res.status(500).json({ error: '读取失败' });
+  }
+});
+
+app.post('/api/orders/import/:id/undo', requireUser, requireRole('admin', 'editor'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: '无效的批次' });
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, changes, undone FROM import_batches WHERE id = ? LIMIT 1', [id]
+    );
+    const batch = rows[0];
+    if (!batch) return res.status(404).json({ error: '批次不存在' });
+    if (batch.undone) return res.status(400).json({ error: '该批次已撤销过' });
+
+    let changes = [];
+    try { changes = JSON.parse(batch.changes || '[]'); } catch (e) { changes = []; }
+
+    let reverted = 0, skipped = 0;
+    for (const c of changes) {
+      const [r] = await pool.query(
+        "UPDATE orders SET status = ?, paid_at = ?, note = ? WHERE id = ? AND status = 'paid'",
+        [c.prevStatus || 'pending', c.prevPaidAt || null, c.prevNote || null, c.id]
+      );
+      if (r.affectedRows) reverted++; else skipped++;
+    }
+    await pool.query('UPDATE import_batches SET undone = 1 WHERE id = ?', [id]);
+    await audit(req.user.username, 'order_import_undo',
+      '撤销导入批次 #' + id + '：恢复 ' + reverted + ' 笔' + (skipped ? '，跳过 ' + skipped + ' 笔' : ''), req.ip);
+    res.json({ ok: true, reverted, skipped });
+  } catch (e) {
+    console.error('[orders:import:undo]', e.message);
+    res.status(500).json({ error: '撤销失败' });
   }
 });
 
@@ -979,18 +1414,36 @@ app.put('/api/backups/config', requireUser, requireRole('admin'), async (req, re
   const config = {
     enabled: !!body.enabled,
     hour: Math.max(0, Math.min(23, Math.floor(Number(body.hour) || 0))),
-    keepDays: Math.max(1, Math.min(3650, Math.floor(Number(body.keepDays) || 30)))
+    keepDays: Math.max(1, Math.min(3650, Math.floor(Number(body.keepDays) || 30))),
+    remote: { type: 'none', url: '', username: '', password: '' }
   };
+
+  if (body.remote && body.remote.type === 'webdav') {
+    const url = String(body.remote.url || '').trim().replace(/\/+$/, '');
+    const username = String(body.remote.username || '').trim();
+    const password = String(body.remote.password || '');
+    if (!/^https?:\/\/[^\s]{4,300}$/i.test(url)) {
+      return res.status(400).json({ error: '异地备份地址需以 http:// 或 https:// 开头' });
+    }
+    if (!username || !password) {
+      return res.status(400).json({ error: '请填写异地备份的账号和密码' });
+    }
+    config.remote = { type: 'webdav', url, username, password };
+  }
+
   try {
     await writeSetting('backup_config', config);
+    let remoteError = null;
     if (config.enabled) {
-      await createBackup().catch(() => {});
+      const info = await createBackup().catch(() => null);
+      if (info && info.remote && info.remote.ok === false) remoteError = info.remote.error;
       pruneOld(config.keepDays);
     }
     scheduleBackups();
     await audit(req.user.username, 'backup_config',
-      '备份设置：' + (config.enabled ? '开启' : '关闭') + '，每天 ' + config.hour + ' 点，保留 ' + config.keepDays + ' 天', req.ip);
-    res.json({ ok: true, config });
+      '备份设置：' + (config.enabled ? '开启' : '关闭') + '，每天 ' + config.hour + ' 点，保留 ' + config.keepDays + ' 天' +
+      (config.remote.type === 'webdav' ? '，异地同步开启' : ''), req.ip);
+    res.json({ ok: true, config, remoteError });
   } catch (e) {
     console.error('[backup:config]', e.message);
     res.status(500).json({ error: '保存失败' });
@@ -1001,7 +1454,7 @@ app.post('/api/backups', requireUser, requireRole('admin', 'editor'), async (req
   try {
     const info = await createBackup();
     await audit(req.user.username, 'backup', '手动创建备份 ' + info.file, req.ip);
-    res.json({ ok: true, file: info.file, size: info.size });
+    res.json({ ok: true, file: info.file, size: info.size, remote: info.remote });
   } catch (e) {
     console.error('[backup:create]', e.message);
     res.status(500).json({ error: '创建失败' });
@@ -1018,6 +1471,68 @@ app.delete('/api/backups/:file', requireUser, requireRole('admin'), async (req, 
   if (!deleteBackup(req.params.file)) return res.status(404).json({ error: '文件不存在' });
   await audit(req.user.username, 'backup', '删除备份 ' + req.params.file, req.ip);
   res.json({ ok: true });
+});
+
+/* 从备份恢复：只恢复订单与页面/通知/备份配置，不动管理员账号 */
+function sqlTime(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(v)) {
+    return v.slice(0, 19).replace('T', ' ');
+  }
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return null;
+  const p = n => (n < 10 ? '0' + n : '' + n);
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+    p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+
+app.post('/api/backups/:file/restore', requireUser, requireRole('admin'), async (req, res) => {
+  if (String(req.body?.confirm || '') !== 'RESTORE') {
+    return res.status(400).json({ error: '请输入 RESTORE 确认恢复' });
+  }
+  const data = readBackupFile(req.params.file);
+  if (!data || !data.tables) return res.status(400).json({ error: '备份文件无效' });
+  const orders = Array.isArray(data.tables.orders) ? data.tables.orders : null;
+  if (!orders) return res.status(400).json({ error: '备份中没有订单数据' });
+
+  let pre = null;
+  try { pre = await createBackup(); } catch (e) {}
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    await conn.query('DELETE FROM orders');
+    for (const o of orders) {
+      const status = (o.status === 'paid' || o.status === 'expired') ? o.status : 'pending';
+      await conn.query(
+        `INSERT INTO orders (id, order_no, project, amount, status, paid_at, note, admin_note, proof, source, ip, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [o.id, o.order_no, o.project, Number(o.amount) || 0, status, sqlTime(o.paid_at),
+          o.note || null, o.admin_note || null, o.proof || null, o.source || null, o.ip || null,
+          sqlTime(o.created_at) || new Date()]
+      );
+    }
+    const settingsRows = Array.isArray(data.tables.settings) ? data.tables.settings : [];
+    for (const s of settingsRows) {
+      if (['page_config', 'notify_config', 'backup_config'].indexOf(s.k) < 0) continue;
+      await conn.query(
+        'INSERT INTO settings (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)',
+        [s.k, s.v]
+      );
+    }
+    await conn.commit();
+    await audit(req.user.username, 'backup_restore',
+      '从备份 ' + req.params.file + ' 恢复 ' + orders.length + ' 条订单' +
+      (pre ? '（恢复前已自动备份 ' + pre.file + '）' : ''), req.ip);
+    res.json({ ok: true, restored: orders.length, preBackup: pre ? pre.file : null });
+  } catch (e) {
+    if (conn) { try { await conn.rollback(); } catch (err) {} }
+    console.error('[backup:restore]', e.message);
+    res.status(500).json({ error: '恢复失败：' + e.message });
+  } finally {
+    if (conn) conn.release();
+  }
 });
 
 /* ---------- 静态资源 ---------- */
@@ -1043,4 +1558,6 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`[zan] listening on http://localhost:${PORT}`);
   scheduleBackups();
+  expireStale(true);
+  setInterval(() => expireStale(true), 30 * 60 * 1000).unref?.();
 });

@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS admins (
   username VARCHAR(50) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   role ENUM('admin','editor','viewer') NOT NULL DEFAULT 'admin',
+  totp_secret VARCHAR(64) DEFAULT NULL,
+  totp_enabled TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_username (username)
@@ -19,9 +21,11 @@ CREATE TABLE IF NOT EXISTS orders (
   order_no VARCHAR(40) NOT NULL,
   project VARCHAR(80) NOT NULL,
   amount DECIMAL(10,2) NOT NULL,
-  status ENUM('pending','paid') NOT NULL DEFAULT 'pending',
+  status ENUM('pending','paid','expired') NOT NULL DEFAULT 'pending',
   paid_at DATETIME DEFAULT NULL,
   note VARCHAR(200) DEFAULT NULL,
+  admin_note VARCHAR(500) DEFAULT NULL,
+  proof VARCHAR(120) DEFAULT NULL,
   source VARCHAR(60) DEFAULT NULL,
   ip VARCHAR(45) DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -61,4 +65,17 @@ CREATE TABLE IF NOT EXISTS daily_visitors (
   day DATE NOT NULL,
   visitor CHAR(36) NOT NULL,
   PRIMARY KEY (day, visitor)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS import_batches (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  actor VARCHAR(50) DEFAULT NULL,
+  csv_rows INT UNSIGNED NOT NULL DEFAULT 0,
+  matched INT UNSIGNED NOT NULL DEFAULT 0,
+  updated INT UNSIGNED NOT NULL DEFAULT 0,
+  changes MEDIUMTEXT DEFAULT NULL,
+  undone TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

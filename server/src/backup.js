@@ -34,7 +34,57 @@ export async function createBackup() {
   }
 
   fs.writeFileSync(path.join(BACKUP_DIR, file), JSON.stringify(data, null, 2));
-  return { file, size: fs.statSync(path.join(BACKUP_DIR, file)).size };
+  const size = fs.statSync(path.join(BACKUP_DIR, file)).size;
+
+  /* 异地同步（可选，失败不影响本地备份） */
+  let remote = null;
+  try {
+    const cfg = await readBackupConfig();
+    if (cfg.remote && cfg.remote.type !== 'none' && cfg.remote.url) {
+      remote = await uploadRemote(file, cfg.remote);
+    }
+  } catch (e) {
+    remote = { ok: false, error: e.message };
+    if (notifyHook) notifyHook('备份同步到异地失败：' + e.message);
+  }
+
+  return { file, size, remote };
+}
+
+function normalizeRemote(src) {
+  const d = { type: 'none', url: '', username: '', password: '' };
+  if (!src || typeof src !== 'object') return d;
+  const type = src.type === 'webdav' ? 'webdav' : 'none';
+  if (type === 'none') return d;
+  const url = String(src.url || '').trim();
+  if (!/^https?:\/\/[^\s]{4,300}$/i.test(url)) return null;
+  const username = String(src.username || '').trim().slice(0, 100);
+  const password = String(src.password || '').slice(0, 100);
+  if (!username || !password) return null;
+  return { type, url: url.replace(/\/+$/, ''), username, password };
+}
+
+async function uploadRemote(file, remote) {
+  const target = remote.url + '/' + encodeURIComponent(file);
+  const headers = { 'Content-Type': 'application/json' };
+  headers.Authorization = 'Basic ' +
+    Buffer.from(remote.username + ':' + remote.password).toString('base64');
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch(target, {
+      method: 'PUT',
+      headers,
+      body: fs.readFileSync(path.join(BACKUP_DIR, file)),
+      signal: ctrl.signal
+    });
+    if (!res.ok) return { ok: false, error: 'HTTP ' + res.status };
+    return { ok: true, url: target };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function listBackups() {
@@ -51,6 +101,16 @@ export function backupPath(file) {
   const full = path.join(BACKUP_DIR, file);
   if (!fs.existsSync(full)) return null;
   return full;
+}
+
+export function readBackupFile(file) {
+  const full = backupPath(file);
+  if (!full) return null;
+  try {
+    return JSON.parse(fs.readFileSync(full, 'utf8'));
+  } catch (e) {
+    return null;
+  }
 }
 
 export function deleteBackup(file) {
@@ -76,6 +136,11 @@ export function pruneOld(keepDays) {
 /* ---------- 定时调度 ---------- */
 
 let timer = null;
+let notifyHook = null;
+
+export function setNotifyHook(fn) {
+  notifyHook = typeof fn === 'function' ? fn : null;
+}
 
 function msUntilNext(hour) {
   const now = new Date();
@@ -90,25 +155,31 @@ export async function readBackupConfig() {
     const [rows] = await pool.query("SELECT v FROM settings WHERE k = 'backup_config' LIMIT 1");
     if (rows.length) {
       const parsed = JSON.parse(rows[0].v);
+      const remote = normalizeRemote(parsed.remote);
       return {
         enabled: !!parsed.enabled,
         hour: Math.max(0, Math.min(23, Number(parsed.hour) || 0)),
-        keepDays: Math.max(1, Math.min(3650, Number(parsed.keepDays) || 30))
+        keepDays: Math.max(1, Math.min(3650, Number(parsed.keepDays) || 30)),
+        remote: remote || { type: 'none', url: '', username: '', password: '' }
       };
     }
   } catch (e) {}
-  return { enabled: false, hour: 3, keepDays: 30 };
+  return { enabled: false, hour: 3, keepDays: 30, remote: { type: 'none', url: '', username: '', password: '' } };
 }
 
-async function runScheduled() {
+export async function runScheduled() {
   const cfg = await readBackupConfig();
   if (!cfg.enabled) return;
   try {
-    await createBackup();
+    const info = await createBackup();
     pruneOld(cfg.keepDays);
-    console.log('[backup] 定时备份完成');
+    console.log('[backup] 定时备份完成 ' + info.file);
+    if (info.remote && info.remote.ok === false && notifyHook) {
+      notifyHook('备份已生成，但同步到异地失败：' + info.remote.error);
+    }
   } catch (e) {
     console.error('[backup] 定时备份失败：', e.message);
+    if (notifyHook) notifyHook('定时备份失败：' + e.message);
   }
 }
 

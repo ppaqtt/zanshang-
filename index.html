@@ -110,9 +110,20 @@
     font-weight:600;
   }
 
+  /* 留言 */
+  .msg-wrap{padding:18px 20px 0;}
+  .msg-wrap input{
+    width:100%;height:40px;border:1px solid var(--line);border-radius:10px;
+    padding:0 12px;font-size:13px;color:var(--ink);background:#fff;outline:none;
+    font-family:inherit;transition:border-color .16s;
+  }
+  .msg-wrap input:focus{border-color:var(--coral);}
+  .pay-status{
+    margin-top:12px;padding:9px 12px;border-radius:10px;font-size:13px;
+    background:#f2fbf5;color:#2e8b57;border:1px solid #d8f0e0;
+  }
   /* 金额 */
-  .grid{
-    display:grid;
+  .grid{    display:grid;
     grid-template-columns:repeat(3,1fr);
     gap:12px;
     padding:22px 20px 0;
@@ -296,6 +307,8 @@
   body.skin-night .modal-title{color:#e8e8f0;}
   body.skin-night .note{color:#7a7a8c;}
   body.skin-night .avatar{border-color:#2a2a38;}
+  body.skin-night .msg-wrap input{background:#2a2a38;border-color:#3a3a4c;color:#e8e8f0;}
+  body.skin-night .pay-status{background:#22352a;border-color:#2e4a3a;color:#7ed6a0;}
 </style>
 </head>
 <body>
@@ -310,6 +323,10 @@
     </div>
 
     <nav class="tabs" id="tabs" aria-label="选择项目"></nav>
+
+    <div class="msg-wrap">
+      <input id="donorMsg" maxlength="100" placeholder="留句话吧（可选，最多 100 字）">
+    </div>
 
     <main class="grid" id="grid" aria-label="选择赞赏金额"></main>
 
@@ -327,6 +344,7 @@
         <button class="copy-btn" id="copyBtn" type="button">复制</button>
       </div>
       <p class="modal-hint" id="modalHint"></p>
+      <div class="pay-status" id="payStatus" hidden></div>
       <p class="modal-tip">付款时把订单号填入「添加备注」，方便核对</p>
       <p class="modal-note">订单号仅用于对账，不代表支付成功</p>
       <button class="modal-done" id="modalDone">完成</button>
@@ -534,16 +552,54 @@
     });
   }
 
+  let pollTimer = null;
+  let pollOrder = null;
+
+  function stopPoll() {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+    pollOrder = null;
+  }
+
+  function showPaid() {
+    const el = document.getElementById('payStatus');
+    el.textContent = '已确认到账，非常感谢！';
+    el.hidden = false;
+  }
+
+  function startPoll(orderNo) {
+    stopPoll();
+    pollOrder = orderNo;
+    const started = Date.now();
+    document.getElementById('payStatus').hidden = true;
+
+    const tick = async () => {
+      if (pollOrder !== orderNo) return;
+      if (Date.now() - started > 10 * 60 * 1000) return;
+      try {
+        const res = await fetch('/api/orders/status/' + encodeURIComponent(orderNo), { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (pollOrder !== orderNo) return;
+        if (data.status === 'paid') { showPaid(); return; }
+      } catch (e) { /* 网络波动继续轮询 */ }
+      pollTimer = setTimeout(tick, 5000);
+    };
+    pollTimer = setTimeout(tick, 3000);
+  }
+
   function openModal(amount) {
     const p = PROJECTS[currentProject];
     modalTitle.textContent = '向「' + p.name + '」赞赏 ¥' + amount;
-    modalHint.innerHTML = '长按识别二维码，在付款页选择「赞赏 ' + amount + 'r」';
+    modalHint.innerHTML = '长按识别二维码，在付款页选择「赞赏 ' + amount + '」';
 
     const orderNo = genOrderNo(p);
     orderNoEl.textContent = orderNo;
     copyBtn.textContent = '复制';
     copyBtn.classList.remove('copied');
-    reportOrder({ order: orderNo, project: p.name, amount: amount });
+    const msg = (document.getElementById('donorMsg').value || '').trim().slice(0, 100);
+    reportOrder({ order: orderNo, project: p.name, amount: amount, note: msg });
+
+    startPoll(orderNo);
 
     qrWrap.innerHTML = '';
 
@@ -562,6 +618,7 @@
   function closeModal() {
     modal.classList.remove('open');
     selectedAmount = null;
+    stopPoll();
     renderGrid();
   }
 

@@ -9,6 +9,7 @@ export const SKIN_KEYS = Object.keys(SKINS);
 
 export const DEFAULT_CONFIG = {
   amounts: [1, 5, 10, 20, 50, 100, 500, 666, 888, 1000],
+  expireHours: 24,
   theme: {
     skin: 'coral',
     accent: '#E4573D',
@@ -53,4 +54,9 @@ export const NOTIFY_TYPES = ['none', 'feishu', 'dingtalk', 'serverchan', 'generi
 
 export const ROLES = ['admin', 'editor', 'viewer'];
 
-export const DEFAULT_BACKUP = { enabled: false, hour: 3, keepDays: 30 };
+export const DEFAULT_BACKUP = {
+  enabled: false,
+  hour: 3,
+  keepDays: 30,
+  remote: { type: 'none', url: '', username: '', password: '' }
+};
