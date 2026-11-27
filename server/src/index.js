@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
-import { DEFAULT_CONFIG, DEFAULT_NOTIFY, NOTIFY_TYPES, ROLES, SKIN_KEYS, DEFAULT_BACKUP } from './defaults.js';
+import { DEFAULT_CONFIG, DEFAULT_NOTIFY, DEFAULT_SUMMARY, NOTIFY_TYPES, ROLES, SKIN_KEYS, DEFAULT_BACKUP } from './defaults.js';
 import {
   setSessionCookie, clearSessionCookie, currentUser, rateLimit
 } from './auth.js';
@@ -207,6 +207,28 @@ function validateWebhook(type, url) {
   return { type, url: u.toString() };
 }
 
+/* 校验并规整周期总结配置，缺项补默认值 */
+function normalizeSummary(input) {
+  const def = JSON.parse(JSON.stringify(DEFAULT_SUMMARY));
+  if (!input || typeof input !== 'object') return def;
+  for (const p of ['daily', 'weekly', 'monthly']) {
+    const src = input[p] || {};
+    const d = def[p];
+    d.enabled = !!src.enabled;
+    const h = Number(src.hour);
+    if (Number.isInteger(h) && h >= 0 && h <= 23) d.hour = h;
+    if (p !== 'daily') {
+      const dd = Number(src.day);
+      if (p === 'weekly') {
+        if (Number.isInteger(dd) && dd >= 0 && dd <= 6) d.day = dd;
+      } else {
+        if (Number.isInteger(dd) && dd >= 1 && dd <= 28) d.day = dd;
+      }
+    }
+  }
+  return def;
+}
+
 async function sendWebhook(cfg, text) {
   if (!cfg || cfg.type === 'none' || !cfg.url) return { ok: false, error: '未配置通知' };
 
@@ -247,6 +269,161 @@ async function pushNotify(text) {
 }
 
 setNotifyHook(text => { pushNotify(text); });
+
+/* ---------- 周期总结（日/周/月推送） ---------- */
+
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+/* 本地时间 → "YYYY-MM-DD HH:MM:SS"，直接与 DATETIME 列比较，避免时区错位 */
+function fmtDT(d) {
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+    ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+}
+function fmtDate(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function fmtMD(d) { return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+
+/* 计算各周期的时间窗起点（本地 00:00:00）与展示标签；统计口径必须绑定此窗口 */
+function summaryWindow(period, now) {
+  now = now || new Date();
+  const start = new Date(now);
+  let label;
+  if (period === 'daily') {
+    start.setHours(0, 0, 0, 0);
+    label = fmtDate(start) + ' 00:00 至今';
+  } else if (period === 'weekly') {
+    const diff = (start.getDay() + 6) % 7; // 周一为一周起点
+    start.setDate(start.getDate() - diff);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    label = fmtMD(start) + ' 至 ' + fmtMD(end) + '（截至今日）';
+  } else {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    label = start.getFullYear() + '年' + pad2(start.getMonth() + 1) + '月（截至今日）';
+  }
+  return { start: fmtDT(start), label };
+}
+
+/* 周期去重桶 key：同一桶内只发一次 */
+function summaryBucket(period, now) {
+  now = now || new Date();
+  if (period === 'daily') return fmtDate(now);
+  if (period === 'weekly') {
+    const d = new Date(now);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return fmtDate(d);
+  }
+  return now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+}
+
+async function summaryStats(period, now) {
+  const { start } = summaryWindow(period, now);
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS total_count,
+            COALESCE(SUM(amount),0) AS total_sum,
+            SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) AS paid_count,
+            COALESCE(SUM(CASE WHEN status='paid' THEN amount ELSE 0 END),0) AS paid_sum,
+            SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending_count,
+            COALESCE(SUM(CASE WHEN status='pending' THEN amount ELSE 0 END),0) AS pending_sum
+     FROM orders WHERE created_at >= ?`,
+    [start]
+  );
+  const r = rows[0] || {};
+  const [proj] = await pool.query(
+    `SELECT project, COUNT(*) AS count, COALESCE(SUM(amount),0) AS sum
+     FROM orders WHERE created_at >= ?
+     GROUP BY project ORDER BY sum DESC LIMIT 20`,
+    [start]
+  );
+  return {
+    totalCount: Number(r.total_count) || 0,
+    totalSum: Number(r.total_sum) || 0,
+    paidCount: Number(r.paid_count) || 0,
+    paidSum: Number(r.paid_sum) || 0,
+    pendingCount: Number(r.pending_count) || 0,
+    pendingSum: Number(r.pending_sum) || 0,
+    byProject: proj.map(p => ({ project: p.project, count: Number(p.count), sum: Number(p.sum) }))
+  };
+}
+
+const SUMMARY_TITLE = { daily: '赞赏日报', weekly: '赞赏周报', monthly: '赞赏月报' };
+
+function buildSummaryText(period, stats, windowLabel, now) {
+  const lines = ['【' + (SUMMARY_TITLE[period] || '赞赏总结') + '】'];
+  lines.push('统计范围：' + windowLabel);
+  lines.push('总笔数：' + stats.totalCount + ' 笔，总金额：¥' + stats.totalSum.toFixed(2));
+  lines.push('已到账：' + stats.paidCount + ' 笔 ¥' + stats.paidSum.toFixed(2) +
+    '，待核对：' + stats.pendingCount + ' 笔 ¥' + stats.pendingSum.toFixed(2));
+  if (stats.byProject.length) {
+    lines.push('项目分布：');
+    for (const p of stats.byProject) lines.push('- ' + p.project + '：' + p.count + ' 笔 ¥' + p.sum.toFixed(2));
+  } else {
+    lines.push('项目分布：暂无订单');
+  }
+  lines.push('生成时间：' + (now || new Date()).toLocaleString('zh-CN'));
+  return lines.join('\n');
+}
+
+/* 读取并规整当前通知配置（summary 缺项补默认） */
+async function loadNotifyConfig() {
+  const cfg = await readSetting('notify_config', DEFAULT_NOTIFY);
+  if (!cfg || typeof cfg !== 'object') return { ...DEFAULT_NOTIFY, summary: normalizeSummary(null) };
+  cfg.summary = normalizeSummary(cfg.summary);
+  return cfg;
+}
+
+async function sendSummary(period, now) {
+  const cfg = await loadNotifyConfig();
+  if (!cfg || cfg.type === 'none' || !cfg.url) return { ok: false, error: '未配置通知' };
+  const win = summaryWindow(period, now);
+  const stats = await summaryStats(period, now);
+  const text = buildSummaryText(period, stats, win.label, now);
+  const result = await sendWebhook(cfg, text);
+  if (!result.ok) console.error('[summary] 推送失败：', period, result.error || result.status);
+  return result;
+}
+
+/* 各周期上次成功发送的桶 key，持久化以防重启重复发送 */
+async function getSummaryLast() { return (await readSetting('summary_last', {})) || {}; }
+async function setSummaryLastSent(period, bucket) {
+  const cur = await getSummaryLast();
+  cur[period] = bucket;
+  await writeSetting('summary_last', cur);
+}
+
+let summaryTimer = null;
+function scheduleSummary() {
+  if (summaryTimer) { clearInterval(summaryTimer); summaryTimer = null; }
+  summaryTimer = setInterval(summaryTick, 60 * 1000);
+  summaryTimer.unref?.();
+  summaryTick().catch(e => console.error('[summary:tick]', e.message));
+}
+
+async function summaryTick() {
+  try {
+    const cfg = await loadNotifyConfig();
+    const s = cfg.summary || normalizeSummary(null);
+    const now = new Date();
+    const last = await getSummaryLast();
+    for (const period of ['daily', 'weekly', 'monthly']) {
+      const conf = s[period];
+      if (!conf || !conf.enabled) continue;
+      if (now.getHours() !== conf.hour) continue;
+      if (period === 'weekly' && now.getDay() !== conf.day) continue;
+      if (period === 'monthly' && now.getDate() !== conf.day) continue;
+      const bucket = summaryBucket(period, now);
+      if (last[period] === bucket) continue;
+      const result = await sendSummary(period, now);
+      if (result.ok) {
+        await setSummaryLastSent(period, bucket);
+        console.log('[summary] 已推送 ' + period + ' 总结');
+      }
+    }
+  } catch (e) {
+    console.error('[summary:tick]', e.message);
+  }
+}
 
 /* ---------- 健康检查 ---------- */
 
@@ -566,7 +743,7 @@ app.put('/api/config', requireUser, requireRole('admin', 'editor'), async (req, 
 /* ---------- 通知设置 ---------- */
 
 app.get('/api/notify', requireUser, requireRole('admin'), async (req, res) => {
-  res.json(await readSetting('notify_config', DEFAULT_NOTIFY));
+  res.json(await loadNotifyConfig());
 });
 
 app.put('/api/notify', requireUser, requireRole('admin'), async (req, res) => {
@@ -575,9 +752,14 @@ app.put('/api/notify', requireUser, requireRole('admin'), async (req, res) => {
     return res.status(400).json({ error: '通知地址必须是 https 公网地址，且类型正确' });
   }
   try {
+    const existing = await readSetting('notify_config', DEFAULT_NOTIFY);
+    cfg.summary = req.body?.summary === undefined
+      ? normalizeSummary(existing && existing.summary)
+      : normalizeSummary(req.body.summary);
     await writeSetting('notify_config', cfg);
     await audit(req.user.username, 'notify_update',
-      cfg.type === 'none' ? '关闭通知' : '通知方式改为 ' + cfg.type, req.ip);
+      cfg.type === 'none' ? '关闭通知' : ('通知方式改为 ' + cfg.type + '，周期总结已更新'), req.ip);
+    scheduleSummary();
     res.json({ ok: true, config: cfg });
   } catch (e) {
     console.error('[notify:save]', e.message);
@@ -586,9 +768,26 @@ app.put('/api/notify', requireUser, requireRole('admin'), async (req, res) => {
 });
 
 app.post('/api/notify/test', requireUser, requireRole('admin'), async (req, res) => {
-  const cfg = await readSetting('notify_config', DEFAULT_NOTIFY);
+  const cfg = await loadNotifyConfig();
   const result = await sendWebhook(cfg,
     '这是一条测试消息\n来自赞赏管理台 · ' + new Date().toLocaleString('zh-CN'));
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error || ('推送失败，接口返回 ' + result.status) });
+  }
+  res.json({ ok: true });
+});
+
+/* 立即推送一份指定周期的总结（用于面板验证） */
+app.post('/api/notify/summary/test', requireUser, requireRole('admin'), async (req, res) => {
+  const period = String(req.body?.period || 'daily');
+  if (['daily', 'weekly', 'monthly'].indexOf(period) < 0) {
+    return res.status(400).json({ error: '周期参数不正确' });
+  }
+  const cfg = await loadNotifyConfig();
+  if (!cfg || cfg.type === 'none' || !cfg.url) {
+    return res.status(400).json({ error: '请先配置通知地址' });
+  }
+  const result = await sendSummary(period);
   if (!result.ok) {
     return res.status(400).json({ error: result.error || ('推送失败，接口返回 ' + result.status) });
   }
@@ -1558,6 +1757,7 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`[zan] listening on http://localhost:${PORT}`);
   scheduleBackups();
+  scheduleSummary();
   expireStale(true);
   setInterval(() => expireStale(true), 30 * 60 * 1000).unref?.();
 });

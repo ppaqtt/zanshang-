@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import mysql from 'mysql2/promise';
 import { pool } from '../src/db.js';
-import { DEFAULT_CONFIG, DEFAULT_NOTIFY, DEFAULT_BACKUP, SKIN_KEYS } from '../src/defaults.js';
+import { DEFAULT_CONFIG, DEFAULT_NOTIFY, DEFAULT_BACKUP, DEFAULT_SUMMARY, SKIN_KEYS } from '../src/defaults.js';
 
 /* 幂等升级：已存在的旧库直接执行，不会重复加列或丢数据 */
 async function columnExists(table, column) {
@@ -216,13 +216,21 @@ async function main() {
     }
   }
 
-  const [notify] = await pool.query("SELECT k FROM settings WHERE k = 'notify_config' LIMIT 1");
+  const [notify] = await pool.query("SELECT k, v FROM settings WHERE k = 'notify_config' LIMIT 1");
   if (!notify.length) {
     await pool.query(
       "INSERT INTO settings (k, v) VALUES ('notify_config', ?)",
-      [JSON.stringify(DEFAULT_NOTIFY)]
+      [JSON.stringify({ ...DEFAULT_NOTIFY, summary: DEFAULT_SUMMARY })]
     );
     console.log('  + 已写入默认通知配置');
+  } else {
+    let nconf = null;
+    try { nconf = JSON.parse(notify[0].v); } catch (e) { nconf = null; }
+    if (nconf && typeof nconf === 'object' && !nconf.summary) {
+      nconf.summary = JSON.parse(JSON.stringify(DEFAULT_SUMMARY));
+      await pool.query("UPDATE settings SET v = ? WHERE k = 'notify_config'", [JSON.stringify(nconf)]);
+      console.log('  + 已补充周期总结默认配置');
+    }
   }
 
   const [bk] = await pool.query("SELECT k, v FROM settings WHERE k = 'backup_config' LIMIT 1");

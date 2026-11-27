@@ -50,6 +50,13 @@ export const DEFAULT_CONFIG = {
 
 export const DEFAULT_NOTIFY = { type: 'none', url: '' };
 
+/* 周期总结默认配置；weekday: 0=周日,1=周一,...,6=周六；monthly day: 1-28 */
+export const DEFAULT_SUMMARY = {
+  daily: { enabled: true, hour: 20 },
+  weekly: { enabled: true, day: 1, hour: 21 },
+  monthly: { enabled: true, day: 1, hour: 9 }
+};
+
 export const NOTIFY_TYPES = ['none', 'feishu', 'dingtalk', 'serverchan', 'generic'];
 
 export const ROLES = ['admin', 'editor', 'viewer'];
