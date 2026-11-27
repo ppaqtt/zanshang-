@@ -42,7 +42,7 @@
     position:relative;
     height:146px;
     flex:none;
-    background:linear-gradient(180deg,#ec6a50 0%,var(--coral-deep) 100%);
+    background:linear-gradient(180deg,var(--coral) 0%,var(--coral-deep) 100%);
     border-radius:0 0 50% 50% / 0 0 86px 86px;
   }
   .avatar{
@@ -297,7 +297,7 @@
     </header>
 
     <div class="brand">
-      <h1>感谢相伴</h1>
+      <h1 id="brandTitle">感谢相伴</h1>
       <p class="sub" id="subtitle"></p>
     </div>
 
@@ -305,7 +305,7 @@
 
     <main class="grid" id="grid" aria-label="选择赞赏金额"></main>
 
-    <p class="note">赞赏是为表示鼓励而对文章内容的无偿赠予</p>
+    <p class="note" id="pageNote">赞赏是为表示鼓励而对文章内容的无偿赠予</p>
   </div>
 
   <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -361,6 +361,7 @@
 
   let PROJECTS = DEFAULT_PROJECTS;
   let AMOUNTS = DEFAULT_AMOUNTS;
+  let THEME = null;
   let currentProject = 0;
   let selectedAmount = null;
 
@@ -443,7 +444,50 @@
       fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(record),
+        body: JSON.stringify(Object.assign({ source: getSource() }, record)),
+        keepalive: true
+      }).catch(() => {});
+    } catch (e) {}
+  }
+
+  function getSource() {
+    try {
+      const from = new URLSearchParams(location.search).get('from');
+      if (from) return from.trim().slice(0, 60);
+      if (document.referrer) {
+        const h = new URL(document.referrer).hostname;
+        if (h && h !== location.hostname) return h.slice(0, 60);
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  function shade(hex, percent) {
+    const n = parseInt(hex.slice(1), 16);
+    const f = 1 + percent / 100;
+    const clamp = v => Math.max(0, Math.min(255, Math.round(v * f)));
+    const r = clamp((n >> 16) & 255), g = clamp((n >> 8) & 255), b = clamp(n & 255);
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  }
+
+  function applyTheme(t) {
+    if (!t) return;
+    if (/^#[0-9A-Fa-f]{6}$/.test(t.accent || '')) {
+      const root = document.documentElement.style;
+      root.setProperty('--coral', t.accent.toUpperCase());
+      root.setProperty('--coral-deep', shade(t.accent, -12));
+    }
+    if (t.title) document.getElementById('brandTitle').textContent = t.title;
+    if (t.pageTitle) document.title = t.pageTitle;
+    if (t.footer) document.getElementById('pageNote').textContent = t.footer;
+  }
+
+  function trackView() {
+    try {
+      fetch('/api/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
         keepalive: true
       }).catch(() => {});
     } catch (e) {}
@@ -527,6 +571,7 @@
           Array.isArray(data.amounts) && data.amounts.length) {
         PROJECTS = data.projects;
         AMOUNTS = data.amounts;
+        THEME = data.theme || null;
         currentProject = 0;
       }
     } catch (e) { /* 接口不可用时用默认配置 */ }
@@ -534,10 +579,12 @@
 
   (async function init() {
     await loadRemoteConfig();
+    applyTheme(THEME);
     renderTabs();
     renderGrid();
     renderAvatar();
     subtitleEl.textContent = PROJECTS[currentProject].sub;
+    trackView();
   })();
 </script>
 </body>

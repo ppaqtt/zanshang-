@@ -246,6 +246,25 @@
       </section>
 
       <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>访问与转化</h2>
+            <p>PV 为页面打开次数，UV 为独立访客，转化率 = 订单数 / 独立访客。</p>
+          </div>
+          <button class="btn ghost sm" id="trafficRefresh">刷新</button>
+        </div>
+        <div class="dash-grid">
+          <div class="dash-item"><div class="k">今日访问</div><div class="v" id="tvTodayPv">0<small>PV</small></div></div>
+          <div class="dash-item"><div class="k">今日访客</div><div class="v" id="tvTodayUv">0<small>UV</small></div></div>
+          <div class="dash-item"><div class="k">今日转化率</div><div class="v" id="tvTodayConv">0<small>%</small></div></div>
+          <div class="dash-item"><div class="k">近 14 天访问</div><div class="v" id="tvPv">0<small>PV</small></div></div>
+          <div class="dash-item"><div class="k">近 14 天访客</div><div class="v" id="tvUv">0<small>UV</small></div></div>
+          <div class="dash-item"><div class="k">近 14 天转化率</div><div class="v" id="tvConv">0<small>%</small></div></div>
+        </div>
+        <div class="chart-box" id="trafficChart"></div>
+      </section>
+
+      <section class="card">
         <div class="card-head"><div><h2>近 14 天金额趋势</h2></div></div>
         <div class="chart-box" id="chartBox"></div>
       </section>
@@ -296,7 +315,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>订单号</th><th>项目</th><th>金额</th><th>状态</th><th>生成时间</th><th></th></tr>
+              <tr><th>订单号</th><th>项目</th><th>金额</th><th>状态</th><th>来源</th><th>备注</th><th>生成时间</th><th></th></tr>
             </thead>
             <tbody id="orderBody"></tbody>
           </table>
@@ -328,6 +347,17 @@
           配置已存入数据库，对所有访客<b>即时生效</b>；图片路径需指向站点内已存在的文件（如 <b>assets/xxx.jpg</b>）。
         </div>
 
+        <div class="proj" style="background:#fff">
+          <div class="proj-grid" style="grid-template-columns:120px 1fr 1.2fr 1.4fr">
+            <div class="field"><label>主题色</label>
+              <input id="accentInput" type="color" value="#E4573D" style="padding:2px;height:38px">
+            </div>
+            <div class="field"><label>主标题</label><input id="titleInput" maxlength="30" placeholder="感谢相伴"></div>
+            <div class="field"><label>浏览器标题</label><input id="pageTitleInput" maxlength="40" placeholder="感谢相伴"></div>
+            <div class="field"><label>页脚文案</label><input id="footerInput" maxlength="80"></div>
+          </div>
+        </div>
+
         <div class="field">
           <label>赞赏金额档位（用逗号分隔，从小到大）</label>
           <input id="amountsInput" class="mono" placeholder="1, 5, 10, 20, 50, 100, 500, 666, 888, 1000">
@@ -339,6 +369,34 @@
           <button class="btn" id="saveBtn" data-role="admin,editor">保存并发布</button>
           <button class="btn ghost" id="reloadCfgBtn" data-role="admin,editor">重新读取服务器配置</button>
           <span class="stamp" id="stamp"></span>
+        </div>
+      </section>
+
+      <section class="card" data-role="admin">
+        <div class="card-head">
+          <div>
+            <h2>新订单通知</h2>
+            <p>有新订单时推送到飞书 / 钉钉 / Server 酱，地址需为公网 https 链接。</p>
+          </div>
+        </div>
+        <div class="proj-grid" style="grid-template-columns:180px 1fr">
+          <div class="field"><label>通知方式</label>
+            <select id="notifyType">
+              <option value="none">关闭</option>
+              <option value="feishu">飞书机器人</option>
+              <option value="dingtalk">钉钉机器人</option>
+              <option value="serverchan">Server 酱</option>
+              <option value="generic">通用 JSON</option>
+            </select>
+          </div>
+          <div class="field"><label>Webhook 地址</label>
+            <input id="notifyUrl" class="mono" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...">
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="notifySave">保存通知设置</button>
+          <button class="btn ghost" id="notifyTest">发送测试</button>
+          <span class="stamp" id="notifyStamp"></span>
         </div>
       </section>
     </section>
@@ -433,8 +491,8 @@
   const ACTION_LABEL = {
     login: '登录', login_fail: '登录失败', password_change: '修改密码',
     config_update: '修改配置', order_status: '订单状态', order_delete: '删除订单',
-    order_clear: '清空订单', admin_create: '创建账号', admin_update: '修改账号',
-    admin_delete: '删除账号'
+    order_note: '订单备注', order_clear: '清空订单', admin_create: '创建账号',
+    admin_update: '修改账号', admin_delete: '删除账号', notify_update: '通知设置'
   };
 
   const state = {
@@ -443,6 +501,7 @@
     orders: [],
     admins: [],
     logs: { logs: [], total: 0, page: 1, size: 50 },
+    traffic: null,
     logPage: 1
   };
 
@@ -521,9 +580,9 @@
     switchTab('dashboard');
     renderOrders();
     renderDashboard();
-    await Promise.all([loadConfig(), loadOrders()]);
+    await Promise.all([loadConfig(), loadOrders(), loadTraffic()]);
     if (isAdmin()) {
-      await Promise.all([loadAdmins(), loadLogs(1)]);
+      await Promise.all([loadAdmins(), loadLogs(1), loadNotify()]);
     }
   }
 
@@ -613,6 +672,11 @@
   function fillConfigForm() {
     if (!state.config) return;
     $('amountsInput').value = (state.config.amounts || []).join(', ');
+    const t = state.config.theme || {};
+    $('accentInput').value = /^#[0-9A-Fa-f]{6}$/.test(t.accent || '') ? t.accent : '#E4573D';
+    $('titleInput').value = t.title || '';
+    $('pageTitleInput').value = t.pageTitle || '';
+    $('footerInput').value = t.footer || '';
     renderProjects();
   }
 
@@ -646,7 +710,19 @@
       if (!v) bad = true;
     });
     if (bad) { toast('名称、前缀、图片路径都不能为空，前缀用 1-4 个字母'); return null; }
-    return { amounts, projects };
+
+    const theme = {
+      accent: String($('accentInput').value || '').toUpperCase(),
+      title: $('titleInput').value.trim(),
+      pageTitle: $('pageTitleInput').value.trim(),
+      footer: $('footerInput').value.trim()
+    };
+    if (!/^#[0-9A-F]{6}$/.test(theme.accent) || !theme.title || !theme.pageTitle || !theme.footer) {
+      toast('主题色、主标题、浏览器标题、页脚文案都要填写');
+      return null;
+    }
+
+    return { amounts, theme, projects };
   }
 
   $('saveBtn').addEventListener('click', async () => {
@@ -670,6 +746,41 @@
   $('reloadCfgBtn').addEventListener('click', async () => {
     await loadConfig();
     toast('已重新读取服务器配置');
+  });
+
+  /* ---------- 通知设置 ---------- */
+
+  async function loadNotify() {
+    try {
+      const cfg = await apiJson('/api/notify');
+      $('notifyType').value = cfg.type || 'none';
+      $('notifyUrl').value = cfg.url || '';
+    } catch (e) {}
+  }
+
+  $('notifySave').addEventListener('click', async () => {
+    const type = $('notifyType').value;
+    const url = $('notifyUrl').value.trim();
+    if (type !== 'none' && !/^https:\/\//i.test(url)) {
+      toast('Webhook 地址必须以 https:// 开头');
+      return;
+    }
+    try {
+      await apiJson('/api/notify', { method: 'PUT', body: JSON.stringify({ type, url }) });
+      $('notifyStamp').textContent = '已保存 ' + timeText(Date.now());
+      toast(type === 'none' ? '已关闭通知' : '通知设置已保存');
+    } catch (e) {
+      toast(e.message || '保存失败');
+    }
+  });
+
+  $('notifyTest').addEventListener('click', async () => {
+    try {
+      await apiJson('/api/notify/test', { method: 'POST', body: '{}' });
+      toast('测试消息已发送，请查看对应群');
+    } catch (e) {
+      toast(e.message || '发送失败');
+    }
   });
 
   /* ---------- 订单 ---------- */
@@ -755,6 +866,7 @@
       const actions = canEdit()
         ? '<button class="btn ghost sm" data-act="status" data-id="' + r.id + '">' +
             (r.status === 'paid' ? '取消到账' : '标记到账') + '</button> ' +
+          '<button class="btn ghost sm" data-act="note" data-id="' + r.id + '">备注</button> ' +
           '<button class="btn ghost sm" data-act="del" data-id="' + r.id + '">删除</button>'
         : '';
       tr.innerHTML =
@@ -762,6 +874,9 @@
         '<td>' + esc(r.project || '—') + '</td>' +
         '<td class="num">¥' + (Number(r.amount) || 0) + '</td>' +
         '<td>' + statusBadge(r.status) + '</td>' +
+        '<td>' + (r.source ? esc(r.source) : '—') + '</td>' +
+        '<td style="white-space:normal;max-width:220px">' +
+          (r.note ? esc(r.note) : '<span style="color:#c9c9c9">—</span>') + '</td>' +
         '<td>' + timeText(r.createdMs) + '</td>' +
         '<td>' + actions + '</td>';
       body.appendChild(tr);
@@ -784,6 +899,23 @@
     }
   }
 
+  async function editNote(id) {
+    const order = state.orders.find(o => o.id === id);
+    if (!order) return;
+    const note = window.prompt('输入备注（最多 200 字，留空则清除）：', order.note || '');
+    if (note === null) return;
+    try {
+      const data = await apiJson('/api/orders/' + id, {
+        method: 'PATCH', body: JSON.stringify({ note })
+      });
+      order.note = data.note || '';
+      renderOrders();
+      toast(order.note ? '备注已保存' : '备注已清除');
+    } catch (e) {
+      toast(e.message || '保存失败');
+    }
+  }
+
   async function deleteOrder(id) {
     if (!window.confirm('确定删除这条记录吗？删除后无法恢复。')) return;
     try {
@@ -800,10 +932,10 @@
   function exportCsv() {
     const rows = currentRows();
     if (!rows.length) { toast('没有可导出的记录'); return; }
-    const head = ['订单号', '项目', '金额', '状态', '生成时间', '到账时间'];
+    const head = ['订单号', '项目', '金额', '状态', '来源', '备注', '生成时间', '到账时间'];
     const lines = rows.map(r =>
       [r.order, r.project || '', r.amount, r.status === 'paid' ? '已到账' : '待核对',
-        timeText(r.createdMs), r.paidMs ? timeText(r.paidMs) : '']
+        r.source || '', r.note || '', timeText(r.createdMs), r.paidMs ? timeText(r.paidMs) : '']
         .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
     );
     const csv = '\ufeff' + head.join(',') + '\n' + lines.join('\n');
@@ -912,6 +1044,74 @@
       Math.max(2, (v / max) * 100).toFixed(1) + '%"></span></span>' +
       '<span class="bar-amount">¥' + v.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</span></div>'
     ).join('');
+  }
+
+  /* ---------- 访问与转化 ---------- */
+
+  async function loadTraffic() {
+    try {
+      state.traffic = await apiJson('/api/stats/daily?days=14');
+      renderTraffic();
+    } catch (e) {}
+  }
+
+  function renderTraffic() {
+    const t = state.traffic;
+    if (!t || !Array.isArray(t.days)) return;
+    const days = t.days;
+    const today = days[days.length - 1] || { pv: 0, uv: 0, conv: 0 };
+
+    $('tvTodayPv').innerHTML = today.pv + '<small>PV</small>';
+    $('tvTodayUv').innerHTML = today.uv + '<small>UV</small>';
+    $('tvTodayConv').innerHTML = today.conv + '<small>%</small>';
+    $('tvPv').innerHTML = t.total.pv + '<small>PV</small>';
+    $('tvUv').innerHTML = t.total.uv + '<small>UV</small>';
+    $('tvConv').innerHTML = t.total.conv + '<small>%</small>';
+
+    renderTrafficChart(days);
+  }
+
+  function renderTrafficChart(days) {
+    if (!days.length) {
+      $('trafficChart').innerHTML = '<p style="color:#b5b5b5;font-size:13px;margin:8px 0">暂无访问数据</p>';
+      return;
+    }
+    const max = Math.max(1, ...days.map(d => Math.max(d.pv, d.uv)));
+    const W = 700, H = 190, left = 34, right = 12, top = 26, bottom = 28;
+    const plotW = W - left - right, plotH = H - top - bottom;
+    const step = plotW / days.length;
+    const bw = Math.max(4, step * 0.26);
+
+    let bars = '';
+    days.forEach((d, i) => {
+      const x0 = left + i * step + step / 2;
+      const hPv = Math.max(1, (d.pv / max) * plotH);
+      const hUv = Math.max(1, (d.uv / max) * plotH);
+      bars += '<rect x="' + (x0 - bw - 1).toFixed(1) + '" y="' + (top + plotH - hPv).toFixed(1) +
+        '" width="' + bw.toFixed(1) + '" height="' + hPv.toFixed(1) + '" rx="2" fill="#ec6a50"></rect>';
+      bars += '<rect x="' + (x0 + 1).toFixed(1) + '" y="' + (top + plotH - hUv).toFixed(1) +
+        '" width="' + bw.toFixed(1) + '" height="' + hUv.toFixed(1) + '" rx="2" fill="#8c8c96"></rect>';
+      bars += '<text x="' + x0.toFixed(1) + '" y="' + (H - 8) +
+        '" font-size="9" fill="#b3b3b3" text-anchor="middle">' + d.day.slice(5).replace('-', '/') + '</text>';
+    });
+
+    const grid = [0, 0.5, 1].map(p => {
+      const y = top + plotH - p * plotH;
+      return '<line x1="' + left + '" y1="' + y + '" x2="' + (W - right) + '" y2="' + y +
+        '" stroke="#f1f1f3"></line>' +
+        '<text x="' + (left - 6) + '" y="' + (y + 3) + '" font-size="9" fill="#b3b3b3" text-anchor="end">' +
+        Math.round(max * p) + '</text>';
+    }).join('');
+
+    const legend =
+      '<rect x="' + (W - 132) + '" y="8" width="8" height="8" rx="2" fill="#ec6a50"></rect>' +
+      '<text x="' + (W - 120) + '" y="15" font-size="10" fill="#9a9a9a">PV</text>' +
+      '<rect x="' + (W - 92) + '" y="8" width="8" height="8" rx="2" fill="#8c8c96"></rect>' +
+      '<text x="' + (W - 80) + '" y="15" font-size="10" fill="#9a9a9a">UV</text>';
+
+    $('trafficChart').innerHTML =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="近 14 天访问趋势">' +
+      grid + bars + legend + '</svg>';
   }
 
   /* ---------- 管理员 ---------- */
@@ -1074,7 +1274,11 @@
 
   /* ---------- 事件绑定 ---------- */
 
-  $('dashRefresh').addEventListener('click', async () => { await loadOrders(); toast('已刷新'); });
+  $('dashRefresh').addEventListener('click', async () => {
+    await Promise.all([loadOrders(), loadTraffic()]);
+    toast('已刷新');
+  });
+  $('trafficRefresh').addEventListener('click', async () => { await loadTraffic(); toast('已刷新'); });
   $('refreshBtn').addEventListener('click', async () => { await loadOrders(); toast('已刷新'); });
   $('csvBtn').addEventListener('click', exportCsv);
 
@@ -1100,6 +1304,7 @@
     if (!btn) return;
     const id = Number(btn.dataset.id);
     if (btn.dataset.act === 'status') toggleStatus(id);
+    if (btn.dataset.act === 'note') editNote(id);
     if (btn.dataset.act === 'del') deleteOrder(id);
   });
 

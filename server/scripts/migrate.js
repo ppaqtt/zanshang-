@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { pool } from '../src/db.js';
-import { DEFAULT_CONFIG } from '../src/defaults.js';
+import { DEFAULT_CONFIG, DEFAULT_NOTIFY } from '../src/defaults.js';
 
 /* 幂等升级：已存在的旧库直接执行，不会重复加列或丢数据 */
 async function columnExists(table, column) {
@@ -53,6 +53,10 @@ async function main() {
       "ALTER TABLE orders ADD COLUMN status ENUM('pending','paid') NOT NULL DEFAULT 'pending' AFTER amount");
     await addColumn('orders', 'paid_at',
       'ALTER TABLE orders ADD COLUMN paid_at DATETIME NULL AFTER status');
+    await addColumn('orders', 'note',
+      'ALTER TABLE orders ADD COLUMN note VARCHAR(200) NULL AFTER paid_at');
+    await addColumn('orders', 'source',
+      'ALTER TABLE orders ADD COLUMN source VARCHAR(60) NULL AFTER note');
     if (!(await indexExists('orders', 'idx_status'))) {
       await pool.query('ALTER TABLE orders ADD INDEX idx_status (status)');
       console.log('  + orders.idx_status 已添加');
@@ -70,6 +74,23 @@ async function main() {
   console.log('  = settings 表就绪');
 
   await pool.query(
+    `CREATE TABLE IF NOT EXISTS daily_stats (
+      day DATE NOT NULL,
+      pv INT UNSIGNED NOT NULL DEFAULT 0,
+      uv INT UNSIGNED NOT NULL DEFAULT 0,
+      PRIMARY KEY (day)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS daily_visitors (
+      day DATE NOT NULL,
+      visitor CHAR(36) NOT NULL,
+      PRIMARY KEY (day, visitor)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+  console.log('  = 访问统计表就绪');
+
+  await pool.query(
     `CREATE TABLE IF NOT EXISTS audit_logs (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       actor VARCHAR(50) DEFAULT NULL,
@@ -83,7 +104,7 @@ async function main() {
   );
   console.log('  = audit_logs 表就绪');
 
-  const [cfg] = await pool.query("SELECT k FROM settings WHERE k = 'page_config' LIMIT 1");
+  const [cfg] = await pool.query("SELECT k, v FROM settings WHERE k = 'page_config' LIMIT 1");
   if (!cfg.length) {
     await pool.query(
       "INSERT INTO settings (k, v) VALUES ('page_config', ?)",
@@ -91,7 +112,24 @@ async function main() {
     );
     console.log('  + 已写入默认页面配置');
   } else {
-    console.log('  = 页面配置已存在');
+    let conf = null;
+    try { conf = JSON.parse(cfg[0].v); } catch (e) { conf = null; }
+    if (conf && !conf.theme) {
+      conf.theme = DEFAULT_CONFIG.theme;
+      await pool.query("UPDATE settings SET v = ? WHERE k = 'page_config'", [JSON.stringify(conf)]);
+      console.log('  + 已补充默认主题配置');
+    } else {
+      console.log('  = 页面配置已存在');
+    }
+  }
+
+  const [notify] = await pool.query("SELECT k FROM settings WHERE k = 'notify_config' LIMIT 1");
+  if (!notify.length) {
+    await pool.query(
+      "INSERT INTO settings (k, v) VALUES ('notify_config', ?)",
+      [JSON.stringify(DEFAULT_NOTIFY)]
+    );
+    console.log('  + 已写入默认通知配置');
   }
 
   console.log('[migrate] 完成');
