@@ -551,11 +551,17 @@
               <option value="wecom">企业微信机器人</option>
               <option value="serverchan">Server 酱</option>
               <option value="generic">通用 JSON</option>
-              <option value="email">邮件（SMTP）</option>
+              <option value="email">仅邮件（SMTP）</option>
             </select>
           </div>
           <div class="field" id="notifyUrlField"><label>Webhook 地址</label>
             <input id="notifyUrl" class="mono" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...">
+          </div>
+        </div>
+
+        <div class="proj-grid" style="grid-template-columns:1fr;margin-top:6px">
+          <div class="field">
+            <label><input type="checkbox" id="mailEnabled"> 同时发送邮件（可与上面的飞书 / 钉钉 / 企业微信并存）</label>
           </div>
         </div>
 
@@ -1204,7 +1210,13 @@
 
   function syncNotifyTypeUI() {
     const type = $('notifyType').value;
-    $('emailFields').hidden = type !== 'email';
+    if (type === 'email') {
+      $('mailEnabled').checked = true;
+      $('mailEnabled').disabled = true;
+    } else {
+      $('mailEnabled').disabled = false;
+    }
+    $('emailFields').hidden = !($('mailEnabled').checked || type === 'email');
     $('notifyUrlField').hidden = type === 'email' || type === 'none';
   }
 
@@ -1221,6 +1233,7 @@
       $('mailUser').value = e.user || '';
       $('mailPass').value = e.pass || '';
       $('mailTo').value = e.to || '';
+      $('mailEnabled').checked = e.enabled === true;
       const q = cfg.quickPaid || {};
       $('quickPaidEnabled').checked = !!q.enabled;
       $('quickPaidBase').value = q.baseUrl || '';
@@ -1239,6 +1252,7 @@
   }
 
   $('notifyType').addEventListener('change', syncNotifyTypeUI);
+  $('mailEnabled').addEventListener('change', syncNotifyTypeUI);
 
   $('notifySave').addEventListener('click', async () => {
     const type = $('notifyType').value;
@@ -1248,6 +1262,7 @@
       return;
     }
     const email = {
+      enabled: type === 'email' ? true : $('mailEnabled').checked,
       host: $('mailHost').value.trim(),
       port: Number($('mailPort').value) || 465,
       secure: $('mailSecure').checked,
@@ -1255,8 +1270,8 @@
       pass: $('mailPass').value,
       to: $('mailTo').value.trim()
     };
-    if (type === 'email' && (!email.host || !email.to)) {
-      toast('邮件通知需填写 SMTP 服务器和收件人');
+    if (email.enabled && (!email.host || !email.to)) {
+      toast('启用邮件通知需填写 SMTP 服务器和收件人');
       return;
     }
     const quickPaid = {
@@ -1273,7 +1288,10 @@
         body: JSON.stringify({ type, url, email, quickPaid, summary: collectSummary() })
       });
       $('notifyStamp').textContent = '已保存 ' + timeText(Date.now());
-      toast(type === 'none' ? '已关闭通知' : '通知设置已保存');
+      const both = type !== 'none' && type !== 'email' && email.enabled;
+      toast(type === 'none'
+        ? (email.enabled ? '已保存：仅发送邮件' : '已关闭通知')
+        : (both ? '已保存：Webhook + 邮件同时发送' : '通知设置已保存'));
     } catch (e) {
       toast(e.message || '保存失败');
     }

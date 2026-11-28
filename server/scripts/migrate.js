@@ -241,6 +241,10 @@ async function main() {
       let changed = false;
       if (!nconf.summary) { nconf.summary = JSON.parse(JSON.stringify(DEFAULT_SUMMARY)); changed = true; }
       if (!nconf.email) { nconf.email = JSON.parse(JSON.stringify(DEFAULT_EMAIL)); changed = true; }
+      if (nconf.email && typeof nconf.email === 'object' && nconf.email.enabled === undefined) {
+        nconf.email.enabled = nconf.type === 'email';
+        changed = true;
+      }
       if (!nconf.quickPaid) { nconf.quickPaid = JSON.parse(JSON.stringify(DEFAULT_QUICK_PAID)); changed = true; }
       if (changed) {
         await pool.query("UPDATE settings SET v = ? WHERE k = 'notify_config'", [JSON.stringify(nconf)]);

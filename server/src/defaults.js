@@ -56,6 +56,7 @@ export const DEFAULT_NOTIFY = { type: 'none', url: '' };
 
 /* 邮件通知（SMTP）默认配置 */
 export const DEFAULT_EMAIL = {
+  enabled: false,
   host: '',
   port: 465,
   secure: true,

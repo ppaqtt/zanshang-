@@ -264,6 +264,7 @@ function validateWebhook(type, url) {
 function normalizeEmail(input) {
   const d = DEFAULT_EMAIL;
   const src = input && typeof input === 'object' ? input : {};
+  const enabled = !!src.enabled;
   const host = safeStr(src.host, 120) || d.host;
   let port = Number(src.port);
   if (!Number.isInteger(port) || port < 1 || port > 65535) port = d.port;
@@ -271,7 +272,7 @@ function normalizeEmail(input) {
   const user = safeStr(src.user, 200) || '';
   const pass = src.pass == null ? '' : String(src.pass).slice(0, 200);
   const to = safeStr(src.to, 300) || '';
-  return { host, port, secure, user, pass, to };
+  return { enabled, host, port, secure, user, pass, to };
 }
 
 function normalizeQuickPaid(input) {
@@ -367,12 +368,41 @@ async function sendWebhook(cfg, text, subject) {
   }
 }
 
+/* 聚合发送：Webhook 渠道与邮件可以同时启用 */
+function hasNotifyChannel(cfg) {
+  if (!cfg) return false;
+  const webhook = ['feishu', 'dingtalk', 'wecom', 'serverchan', 'generic'];
+  if (webhook.indexOf(cfg.type) > -1 && cfg.url) return true;
+  if (cfg.type === 'email') return !!(cfg.email && cfg.email.host && cfg.email.to);
+  return !!(cfg.email && cfg.email.enabled && cfg.email.host && cfg.email.to);
+}
+
+async function sendNotify(cfg, text, subject) {
+  if (!cfg) return { ok: false, error: '未配置通知' };
+  const tasks = [];
+  const webhook = ['feishu', 'dingtalk', 'wecom', 'serverchan', 'generic'];
+  if (webhook.indexOf(cfg.type) > -1 && cfg.url) {
+    tasks.push({ name: 'webhook', p: sendWebhook(cfg, text, subject) });
+  }
+  if (cfg.email && cfg.email.enabled) {
+    tasks.push({ name: 'email', p: sendEmail(cfg.email, subject || '赞赏系统通知', text) });
+  }
+  if (!tasks.length) return { ok: false, error: '未配置通知' };
+  const results = await Promise.all(tasks.map(t => t.p));
+  const failed = [];
+  results.forEach((r, i) => {
+    if (!r || !r.ok) failed.push(tasks[i].name + '：' + ((r && (r.error || ('HTTP ' + r.status))) || '发送失败'));
+  });
+  if (failed.length) return { ok: false, error: failed.join('；'), sent: results.length - failed.length };
+  return { ok: true, sent: results.length };
+}
+
 /* 系统级告警（备份失败、异地同步失败、登录锁定等） */
 async function pushNotify(text) {
   try {
     const cfg = await loadNotifyConfig();
-    if (!cfg || cfg.type === 'none') return;
-    const result = await sendWebhook(cfg, '【赞赏系统】' + text);
+    if (!hasNotifyChannel(cfg)) return;
+    const result = await sendNotify(cfg, '【赞赏系统】' + text, '赞赏系统告警');
     if (!result.ok) console.error('[notify] 推送失败：', result.error || result.status);
   } catch (e) {
     console.error('[notify]', e.message);
@@ -491,17 +521,18 @@ async function loadNotifyConfig() {
   if (typeof base.url !== 'string') base.url = '';
   base.summary = normalizeSummary(base.summary);
   base.email = normalizeEmail(base.email);
+  if (base.type === 'email') base.email.enabled = true;
   base.quickPaid = normalizeQuickPaid(base.quickPaid);
   return base;
 }
 
 async function sendSummary(period, now) {
   const cfg = await loadNotifyConfig();
-  if (!cfg || cfg.type === 'none') return { ok: false, error: '未配置通知' };
+  if (!hasNotifyChannel(cfg)) return { ok: false, error: '未配置通知' };
   const win = summaryWindow(period, now);
   const stats = await summaryStats(period, now);
   const text = buildSummaryText(period, stats, win.label, now);
-  const result = await sendWebhook(cfg, text);
+  const result = await sendNotify(cfg, text, '赞赏' + ({ daily: '日报', weekly: '周报', monthly: '月报' }[period] || '总结'));
   if (!result.ok) console.error('[summary] 推送失败：', period, result.error || result.status);
   return result;
 }
@@ -1004,17 +1035,21 @@ app.put('/api/notify', requireUser, requireRole('admin'), async (req, res) => {
   try {
     const existing = await readSetting('notify_config', DEFAULT_NOTIFY);
     cfg.email = normalizeEmail(req.body?.email === undefined ? (existing && existing.email) : req.body.email);
+    if (cfg.type === 'email') cfg.email.enabled = true;
     cfg.quickPaid = normalizeQuickPaid(req.body?.quickPaid === undefined
       ? (existing && existing.quickPaid) : req.body.quickPaid);
     cfg.summary = req.body?.summary === undefined
       ? normalizeSummary(existing && existing.summary)
       : normalizeSummary(req.body.summary);
-    if (cfg.type === 'email' && (!cfg.email.host || !cfg.email.to)) {
-      return res.status(400).json({ error: '邮件通知需填写 SMTP 服务器和收件人' });
+    if (cfg.email.enabled && (!cfg.email.host || !cfg.email.to)) {
+      return res.status(400).json({ error: '启用邮件通知需填写 SMTP 服务器和收件人' });
     }
     await writeSetting('notify_config', cfg);
+    const channels = [];
+    if (cfg.type !== 'none' && cfg.type !== 'email') channels.push(cfg.type);
+    if (cfg.email.enabled) channels.push('email');
     await audit(req.user.username, 'notify_update',
-      cfg.type === 'none' ? '关闭通知' : ('通知方式改为 ' + cfg.type + '，周期总结已更新'), req.ip);
+      channels.length ? ('通知渠道：' + channels.join(' + ')) : '关闭通知', req.ip);
     scheduleSummary();
     res.json({ ok: true, config: cfg });
   } catch (e) {
@@ -1025,12 +1060,13 @@ app.put('/api/notify', requireUser, requireRole('admin'), async (req, res) => {
 
 app.post('/api/notify/test', requireUser, requireRole('admin'), async (req, res) => {
   const cfg = await loadNotifyConfig();
-  const result = await sendWebhook(cfg,
-    '这是一条测试消息\n来自赞赏管理台 · ' + new Date().toLocaleString('zh-CN'));
+  const result = await sendNotify(cfg,
+    '这是一条测试消息\n来自赞赏管理台 · ' + new Date().toLocaleString('zh-CN'),
+    '赞赏系统测试');
   if (!result.ok) {
     return res.status(400).json({ error: result.error || ('推送失败，接口返回 ' + result.status) });
   }
-  res.json({ ok: true });
+  res.json({ ok: true, sent: result.sent });
 });
 
 /* 立即推送一份指定周期的总结（用于面板验证） */
@@ -1040,7 +1076,7 @@ app.post('/api/notify/summary/test', requireUser, requireRole('admin'), async (r
     return res.status(400).json({ error: '周期参数不正确' });
   }
   const cfg = await loadNotifyConfig();
-  if (!cfg || cfg.type === 'none') {
+  if (!hasNotifyChannel(cfg)) {
     return res.status(400).json({ error: '请先配置通知方式' });
   }
   const result = await sendSummary(period);
@@ -1212,7 +1248,7 @@ function quickPaidLink(id, baseUrl) {
 async function notifyNewOrder({ id, orderNo, project, amount, source, note }) {
   try {
     const cfg = await loadNotifyConfig();
-    if (!cfg || cfg.type === 'none') return;
+    if (!hasNotifyChannel(cfg)) return;
     let text = '【新赞赏】' + project + ' ¥' + amount + '\n' +
       '订单号：' + orderNo + '\n' +
       (note ? '留言：' + note + '\n' : '') +
@@ -1222,7 +1258,7 @@ async function notifyNewOrder({ id, orderNo, project, amount, source, note }) {
       const link = quickPaidLink(id, cfg.quickPaid.baseUrl);
       if (link) text += '\n一键标记到账（7 天内有效）：\n' + link;
     }
-    const result = await sendWebhook(cfg, text);
+    const result = await sendNotify(cfg, text, '新赞赏 ¥' + amount + ' · ' + project);
     if (!result.ok) console.error('[notify] 推送失败：', result.error || result.status);
   } catch (e) {
     console.error('[notify]', e.message);
