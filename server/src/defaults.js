@@ -49,6 +49,15 @@ export const DEFAULT_CONFIG = {
       qr: 'assets/ppdxpz-qr.jpg',
       avatar: 'assets/ppdxpz-logo.webp',
       sub: '感谢你的支持与陪伴'
+    },
+    {
+      id: 'xiaoyingbi',
+      name: '消硬币',
+      code: 'xiaoyingbi',
+      prefix: 'XYB',
+      qr: 'assets/xiaoyingbi-qr.jpg',
+      avatar: 'assets/xiaoyingbi-logo.png',
+      sub: '感谢你的支持与陪伴'
     }
   ]
 };

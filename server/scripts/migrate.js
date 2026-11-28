@@ -225,6 +225,15 @@ async function main() {
           conf[k] = JSON.parse(JSON.stringify(DEFAULT_CONFIG[k])); changed = true;
         }
       }
+      /* 老库补充新项目「消硬币」（已存在则跳过，不覆盖现有配置） */
+      if (!Array.isArray(conf.projects)) conf.projects = [];
+      if (!conf.projects.some(p => p && p.id === 'xiaoyingbi')) {
+        const np = DEFAULT_CONFIG.projects.find(p => p.id === 'xiaoyingbi');
+        if (np) {
+          conf.projects.push(JSON.parse(JSON.stringify(np)));
+          changed = true;
+        }
+      }
       if (changed) {
         await pool.query("UPDATE settings SET v = ? WHERE k = 'page_config'", [JSON.stringify(conf)]);
         console.log('  + 已补充/修正页面配置');
