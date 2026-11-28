@@ -111,6 +111,10 @@
     color:var(--ink);background:#fff;outline:none;min-width:64px;
   }
   .summary-ctl em{font-style:normal;color:#aaa;}
+  .summary-ctl input[type="time"]{
+    border:1px solid #e4e4e6;border-radius:8px;padding:5px 7px;font-size:12px;
+    color:var(--ink);background:#fff;outline:none;font-family:inherit;
+  }
   @media (max-width:720px){ .summary-grid{grid-template-columns:1fr;} }
 
   .stats{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 4px;}
@@ -347,6 +351,21 @@
 
       <section class="card">
         <div class="card-head">
+          <div>
+            <h2>转化漏斗</h2>
+            <p>从访问到发起订单再到确认到账，看看主要流失在哪一步。</p>
+          </div>
+          <select id="funnelRange" class="roleSel">
+            <option value="7">近 7 天</option>
+            <option value="30" selected>近 30 天</option>
+            <option value="90">近 90 天</option>
+          </select>
+        </div>
+        <div id="funnelBox"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
           <div><h2>金额趋势</h2></div>
           <select id="chartRange" class="roleSel">
             <option value="14">近 14 天</option>
@@ -359,6 +378,21 @@
       <section class="card">
         <div class="card-head"><div><h2>项目分布</h2></div></div>
         <div id="projectBars"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>金额档位</h2>
+            <p>哪些金额最受欢迎，可用来调整前台默认档位。</p>
+          </div>
+          <select id="amountRange" class="roleSel">
+            <option value="30">近 30 天</option>
+            <option value="90" selected>近 90 天</option>
+            <option value="180">近 180 天</option>
+          </select>
+        </div>
+        <div id="amountBox"></div>
       </section>
 
       <section class="card">
@@ -379,6 +413,37 @@
             <tbody id="sourceBody"></tbody>
           </table>
           <div class="empty" id="sourceEmpty" hidden>近段时间暂无来源数据</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>渠道链接</h2>
+            <p>为不同渠道生成带 from 参数的链接和二维码，用户访问后订单会自动记录来源。</p>
+          </div>
+        </div>
+        <div class="proj-grid" style="grid-template-columns:1fr auto;align-items:end">
+          <div class="field"><label>渠道名称（如 公众号、朋友圈）</label>
+            <input id="chName" maxlength="30" placeholder="例如：公众号文章">
+          </div>
+          <button class="btn" id="chGen" type="button">生成链接</button>
+        </div>
+        <div id="chResult" style="margin-top:14px" hidden>
+          <div class="field"><label>渠道链接</label>
+            <div style="display:flex;gap:8px">
+              <input id="chLink" class="mono" readonly>
+              <button class="btn ghost" id="chCopy" type="button">复制</button>
+            </div>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:14px;align-items:flex-start">
+            <img id="chQr" alt="渠道二维码" width="160" height="160"
+                 style="border:1px solid #f0f0f2;border-radius:10px;background:#fff">
+            <p style="font-size:12px;color:#8d8d8d;line-height:1.7;margin:4px 0 0">
+              长按或右键保存二维码，发布到对应渠道。<br>
+              用户通过该链接访问时，订单来源会自动记录为渠道名称。
+            </p>
+          </div>
         </div>
       </section>
     </section>
@@ -435,7 +500,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th class="sel"></th><th>订单号</th><th>项目</th><th>金额</th><th>状态</th><th>来源</th><th>备注</th><th>生成时间</th><th></th></tr>            </thead>
+              <tr><th class="sel"></th><th>订单号</th><th>项目</th><th>昵称</th><th>金额</th><th>状态</th><th>来源</th><th>备注</th><th>生成时间</th><th></th></tr>            </thead>
             <tbody id="orderBody"></tbody>
           </table>
           <div class="empty" id="emptyState" hidden>
@@ -519,10 +584,14 @@
               <label><input type="checkbox" id="shareEnabled"> 到账后显示分享文案</label>
               <input id="shareText" maxlength="120" placeholder="我刚刚赞赏了《{project}》，感谢创作！" style="margin-top:6px">
             </div>
+            <div class="field">
+              <label><input type="checkbox" id="rankEnabled"> 前台展示本月支持榜</label>
+              <input id="rankTitle" maxlength="30" placeholder="本月支持榜" style="margin-top:6px">
+            </div>
           </div>
           <p style="font-size:12px;color:#8a8a8a;margin:10px 0 0;line-height:1.6">
             留言墙只展示已到账且有留言的订单；在订单详情里点「隐藏留言」即可从前台移除。
-            分享文案支持 {project} 和 {amount} 占位符。
+            分享文案支持 {project} 和 {amount} 占位符；支持榜按昵称汇总本月已到账金额。
           </p>
         </div>
 
@@ -584,6 +653,37 @@
             <input id="quickPaidBase" class="mono" placeholder="站点公网地址，如 https://zan.example.com（链接 7 天有效）">
           </div>
         </div>
+
+        <div class="proj-grid" style="grid-template-columns:1fr;margin-top:12px">
+          <div class="field">
+            <label>新订单推送文案（可用占位符：{project} {amount} {orderNo} {nickname} {note} {source} {time}）</label>
+            <textarea id="notifyTemplate" maxlength="300" style="width:100%;min-height:92px;border:1px solid #e4e4e6;border-radius:9px;padding:9px 11px;font-size:13px;color:var(--ink);font-family:inherit;resize:vertical;outline:none"></textarea>
+          </div>
+        </div>
+
+        <div class="summary-block">
+          <h3>免打扰与静音</h3>
+          <p>仅影响新订单推送，系统告警和周期总结仍会正常发送。</p>
+          <div class="summary-grid" style="grid-template-columns:1.3fr 1fr">
+            <div class="summary-row">
+              <label><input type="checkbox" id="quietEnabled"> 夜间免打扰</label>
+              <span class="summary-ctl">
+                从 <input id="quietStart" type="time" value="23:00">
+                到 <input id="quietEnd" type="time" value="08:00">
+              </span>
+            </div>
+            <div class="summary-row">
+              <label>临时静音</label>
+              <span class="summary-ctl">
+                <button class="btn ghost sm" id="mute1h" type="button">静音 1 小时</button>
+                <button class="btn ghost sm" id="muteToday" type="button">静音到今天结束</button>
+                <button class="btn ghost sm" id="muteOff" type="button">取消静音</button>
+              </span>
+              <span id="muteState" style="font-size:12px;color:#8d8d8d"></span>
+            </div>
+          </div>
+        </div>
+
         <div class="actions">
           <button class="btn" id="notifySave">保存通知设置</button>
           <button class="btn ghost" id="notifyTest">发送测试</button>
@@ -842,7 +942,8 @@
     admin_update: '修改账号', admin_delete: '删除账号', notify_update: '通知设置',
     order_import: '导入对账', order_batch: '批量操作', backup: '备份', backup_config: '备份设置',
     order_admin_note: '内部备注', order_proof: '到账凭证', order_import_undo: '撤销导入',
-    backup_restore: '恢复备份', totp_enable: '开启两步验证', totp_disable: '关闭两步验证'
+    backup_restore: '恢复备份', totp_enable: '开启两步验证', totp_disable: '关闭两步验证',
+    notify_mute: '临时静音'
   };
   const SKINS = [
     { key: 'coral', name: '珊瑚暖橘', accent: '#E4573D' },
@@ -860,6 +961,8 @@
     logs: { logs: [], total: 0, page: 1, size: 50 },
     traffic: null,
     summary: null,
+    funnel: null,
+    amounts: [],
     logPage: 1,
     selectedIds: new Set(),
     backup: { list: [], config: null }
@@ -941,7 +1044,7 @@
     switchTab('dashboard');
     renderOrders();
     renderDashboard();
-    await Promise.all([loadConfig(), loadOrders(), loadTraffic(), loadSummary(), loadSources()]);
+    await Promise.all([loadConfig(), loadOrders(), loadTraffic(), loadSummary(), loadSources(), loadFunnel(), loadAmounts()]);
     initExportMonth();
     if (isAdmin()) {
       await Promise.all([loadAdmins(), loadLogs(1), loadNotify()]);
@@ -1076,6 +1179,9 @@
     const sh = state.config.share || {};
     $('shareEnabled').checked = sh.enabled !== false;
     $('shareText').value = sh.text || '';
+    const rk = state.config.rank || {};
+    $('rankEnabled').checked = !!rk.enabled;
+    $('rankTitle').value = rk.title || '本月支持榜';
     renderSkinSwatches(t.skin);
     renderProjects();
   }
@@ -1153,8 +1259,12 @@
       enabled: $('shareEnabled').checked,
       text: $('shareText').value.trim() || '我刚刚赞赏了《{project}》，感谢创作！'
     };
+    const rank = {
+      enabled: $('rankEnabled').checked,
+      title: $('rankTitle').value.trim() || '本月支持榜'
+    };
 
-    return { amounts, theme, projects, expireHours, customAmount, goal, wall, share };
+    return { amounts, theme, projects, expireHours, customAmount, goal, wall, share, rank };
   }
 
   $('saveBtn').addEventListener('click', async () => {
@@ -1237,6 +1347,12 @@
       const q = cfg.quickPaid || {};
       $('quickPaidEnabled').checked = !!q.enabled;
       $('quickPaidBase').value = q.baseUrl || '';
+      $('notifyTemplate').value = (cfg.templates && cfg.templates.newOrder) || '';
+      const qt = cfg.quiet || {};
+      $('quietEnabled').checked = !!qt.enabled;
+      $('quietStart').value = qt.start || '23:00';
+      $('quietEnd').value = qt.end || '08:00';
+      renderMuteState(cfg.muteUntil);
       syncNotifyTypeUI();
       const s = cfg.summary || {};
       const set = (id, val) => { const el = $(id); if (el) el.value = val; };
@@ -1253,6 +1369,27 @@
 
   $('notifyType').addEventListener('change', syncNotifyTypeUI);
   $('mailEnabled').addEventListener('change', syncNotifyTypeUI);
+
+  function renderMuteState(until) {
+    const ts = Number(until) || 0;
+    $('muteState').textContent = ts > Date.now() ? '已静音至 ' + timeText(ts) : '当前未静音';
+  }
+
+  async function setMute(duration) {
+    try {
+      const r = await apiJson('/api/notify/mute', { method: 'POST', body: JSON.stringify({ duration }) });
+      renderMuteState(r.muteUntil);
+      toast(duration === 'off' ? '已取消临时静音' : '已开启临时静音');
+      await loadNotify();
+    } catch (e) {
+      toast(e.message || '操作失败');
+    }
+  }
+
+  [['mute1h', '1h'], ['muteToday', 'today'], ['muteOff', 'off']].forEach(([id, duration]) => {
+    const btn = $(id);
+    if (btn) btn.addEventListener('click', () => setMute(duration));
+  });
 
   $('notifySave').addEventListener('click', async () => {
     const type = $('notifyType').value;
@@ -1282,10 +1419,20 @@
       toast('一键到账需填写站点地址（http/https 开头）');
       return;
     }
+    const templates = { newOrder: $('notifyTemplate').value.trim() };
+    if (templates.newOrder.length > 300) {
+      toast('推送文案最多 300 字');
+      return;
+    }
+    const quiet = {
+      enabled: $('quietEnabled').checked,
+      start: $('quietStart').value || '23:00',
+      end: $('quietEnd').value || '08:00'
+    };
     try {
       await apiJson('/api/notify', {
         method: 'PUT',
-        body: JSON.stringify({ type, url, email, quickPaid, summary: collectSummary() })
+        body: JSON.stringify({ type, url, email, quickPaid, summary: collectSummary(), templates, quiet })
       });
       $('notifyStamp').textContent = '已保存 ' + timeText(Date.now());
       const both = type !== 'none' && type !== 'email' && email.enabled;
@@ -1358,7 +1505,8 @@
     const min = $('minAmount').value === '' ? null : Number($('minAmount').value);
     const max = $('maxAmount').value === '' ? null : Number($('maxAmount').value);
     return state.orders.filter(r => {
-      const hay = (String(r.order) + ' ' + (r.note || '') + ' ' + (r.adminNote || '')).toLowerCase();
+      const hay = (String(r.order) + ' ' + (r.note || '') + ' ' + (r.adminNote || '') + ' ' +
+        (r.nickname || '') + ' ' + (r.contactEmail || '')).toLowerCase();
       const amt = Number(r.amount) || 0;
       return (!q || hay.indexOf(q) > -1) &&
         (!proj || r.project === proj) &&
@@ -1444,6 +1592,7 @@
         sel +
         '<td class="oid">' + esc(r.order) + '</td>' +
         '<td>' + esc(r.project || '—') + '</td>' +
+        '<td>' + (r.nickname ? esc(r.nickname) : '<span style="color:#c9c9c9">匿名</span>') + '</td>' +
         '<td class="num">¥' + (Number(r.amount) || 0) + '</td>' +
         '<td>' + statusBadge(r.status) + '</td>' +
         '<td>' + (r.source ? esc(r.source) : '—') + '</td>' +
@@ -1487,6 +1636,9 @@
     $('orderMeta').innerHTML =
       '订单号 <b>' + esc(o.order) + '</b> · ' + esc(o.project || '—') +
       ' · ¥<b>' + (Number(o.amount) || 0) + '</b> · ' + statusBadge(o.status) +
+      '<br>昵称 ' + esc(o.nickname || '匿名') +
+      (o.contactEmail ? ' · ' + esc(o.contactEmail) : '') +
+      (o.thanksSent ? ' · 感谢邮件已发' : '') +
       '<br>生成 ' + timeText(o.createdMs) + (o.paidMs ? ' · 到账 ' + timeText(o.paidMs) : '');
     $('orderNote').value = o.note || '';
     $('orderAdminNote').value = o.adminNote || '';
@@ -1618,10 +1770,10 @@
   function exportCsv() {
     const rows = currentRows();
     if (!rows.length) { toast('没有可导出的记录'); return; }
-    const head = ['订单号', '项目', '金额', '状态', '来源', '备注', '内部备注', '生成时间', '到账时间'];
+    const head = ['订单号', '项目', '昵称', '联系邮箱', '金额', '状态', '来源', '备注', '内部备注', '生成时间', '到账时间'];
     const lines = rows.map(r =>
-      [r.order, r.project || '', r.amount,
-        r.status === 'paid' ? '已到账' : (r.status === 'expired' ? '已过期' : '待核对'),
+      [r.order, r.project || '', r.nickname || '', r.contactEmail || '', r.amount,
+        r.status === 'paid' ? '已到账' : (r.status === 'expired' ? '已过期' : (r.status === 'refunded' ? '已退款' : '待核对')),
         r.source || '', r.note || '', r.adminNote || '', timeText(r.createdMs), r.paidMs ? timeText(r.paidMs) : '']
         .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
     );
@@ -1661,6 +1813,37 @@
   }
 
   $('sourceRange').addEventListener('change', loadSources);
+  $('funnelRange').addEventListener('change', loadFunnel);
+  $('amountRange').addEventListener('change', loadAmounts);
+
+  /* ---------- 渠道链接与二维码 ---------- */
+
+  function initChannelCard() {
+    const gen = $('chGen');
+    if (!gen) return;
+
+    function refresh() {
+      const name = $('chName').value.trim();
+      if (!name) { toast('请先填写渠道名称'); return; }
+      const link = location.origin + '/?from=' + encodeURIComponent(name.slice(0, 60));
+      $('chLink').value = link;
+      $('chQr').src = '/api/qr?size=240&text=' + encodeURIComponent(link);
+      $('chResult').hidden = false;
+    }
+
+    gen.addEventListener('click', refresh);
+    $('chName').addEventListener('keydown', e => { if (e.key === 'Enter') refresh(); });
+    $('chCopy').addEventListener('click', () => {
+      const link = $('chLink').value;
+      if (!link) return;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(link).then(() => toast('链接已复制')).catch(() => toast('请手动复制'));
+      } else {
+        $('chLink').select();
+        try { document.execCommand('copy'); toast('链接已复制'); } catch (e) { toast('请手动复制'); }
+      }
+    });
+  }
 
   function initExportMonth() {
     const d = new Date();
@@ -1796,6 +1979,65 @@
       '<span class="bar-track"><span class="bar-fill" style="width:' +
       Math.max(2, (v / max) * 100).toFixed(1) + '%"></span></span>' +
       '<span class="bar-amount">¥' + v.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</span></div>'
+    ).join('');
+  }
+
+  /* ---------- 转化漏斗与金额档位 ---------- */
+
+  async function loadFunnel() {
+    try {
+      const days = Number($('funnelRange').value) || 30;
+      state.funnel = await apiJson('/api/stats/funnel?days=' + days);
+      renderFunnel();
+    } catch (e) {}
+  }
+
+  function renderFunnel() {
+    const d = state.funnel;
+    const box = $('funnelBox');
+    if (!d) { box.innerHTML = ''; return; }
+    const steps = [
+      { name: '访问访客', v: d.uv, unit: 'UV' },
+      { name: '发起订单', v: d.orders, unit: '笔' },
+      { name: '确认到账', v: d.paid, unit: '笔' }
+    ];
+    const max = Math.max(1, d.uv, d.orders, d.paid);
+    box.innerHTML =
+      '<div class="dash-grid" style="margin-top:10px">' +
+        '<div class="dash-item"><div class="k">访问 PV / UV</div><div class="v">' + d.pv + ' / ' + d.uv + '</div></div>' +
+        '<div class="dash-item"><div class="k">访客 → 下单</div><div class="v">' + d.visitToOrder + '<small>%</small></div></div>' +
+        '<div class="dash-item"><div class="k">下单 → 到账</div><div class="v">' + d.orderToPaid + '<small>%</small></div></div>' +
+        '<div class="dash-item"><div class="k">访客 → 到账</div><div class="v">' + d.visitToPaid + '<small>%</small></div></div>' +
+      '</div>' +
+      steps.map(s => '<div class="bar-row"><span>' + s.name + '</span>' +
+        '<span class="bar-track"><span class="bar-fill" style="width:' +
+        Math.max(2, (s.v / max) * 100).toFixed(1) + '%"></span></span>' +
+        '<span class="bar-amount">' + s.v + ' ' + s.unit + '</span></div>').join('') +
+      '<p style="font-size:11.5px;color:#b3b3b3;margin:10px 0 0">UV 为按天累计的独立访客数，用于观察趋势。</p>';
+  }
+
+  async function loadAmounts() {
+    try {
+      const days = Number($('amountRange').value) || 90;
+      const data = await apiJson('/api/stats/amounts?days=' + days);
+      state.amounts = data.items || [];
+      renderAmounts();
+    } catch (e) {}
+  }
+
+  function renderAmounts() {
+    const items = state.amounts || [];
+    const box = $('amountBox');
+    if (!items.length) {
+      box.innerHTML = '<p style="color:#b5b5b5;font-size:13px;margin:8px 0">暂无数据</p>';
+      return;
+    }
+    const max = Math.max(1, ...items.map(x => x.count));
+    box.innerHTML = items.map(it =>
+      '<div class="bar-row"><span>¥' + fmtMoney(it.amount) + '</span>' +
+      '<span class="bar-track"><span class="bar-fill" style="width:' +
+      Math.max(2, (it.count / max) * 100).toFixed(1) + '%"></span></span>' +
+      '<span class="bar-amount">' + it.count + ' 笔 / 到账 ' + it.paidCount + '</span></div>'
     ).join('');
   }
 
@@ -2279,7 +2521,7 @@
   /* ---------- 事件绑定 ---------- */
 
   $('dashRefresh').addEventListener('click', async () => {
-    await Promise.all([loadOrders(), loadTraffic(), loadSummary()]);
+    await Promise.all([loadOrders(), loadTraffic(), loadSummary(), loadFunnel(), loadAmounts()]);
     toast('已刷新');
   });
   $('trafficRefresh').addEventListener('click', async () => { await loadTraffic(); toast('已刷新'); });
@@ -2424,6 +2666,7 @@
   fillConfigForm();
   renderOrders();
   renderDashboard();
+  initChannelCard();
 
   (async function init() {
     try {

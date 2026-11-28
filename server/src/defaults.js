@@ -13,6 +13,7 @@ export const DEFAULT_CONFIG = {
   customAmount: { enabled: true, min: 1, max: 1000 },
   goal: { enabled: false, title: '本月小目标', target: 500 },
   wall: { enabled: false, title: '大家的留言' },
+  rank: { enabled: false, title: '本月支持榜' },
   share: { enabled: true, text: '我刚刚赞赏了《{project}》，感谢创作！' },
   theme: {
     skin: 'coral',
@@ -53,6 +54,13 @@ export const DEFAULT_CONFIG = {
 };
 
 export const DEFAULT_NOTIFY = { type: 'none', url: '' };
+
+/* 新订单推送文案模板；可用占位符见 renderNewOrderText */
+export const DEFAULT_NOTIFY_TEMPLATE =
+  '【新赞赏】{project} ¥{amount}\n订单号：{orderNo}\n{note}{source}时间：{time}';
+
+/* 夜间免打扰；start > end 表示跨午夜（如 23:00 - 08:00） */
+export const DEFAULT_QUIET = { enabled: false, start: '23:00', end: '08:00' };
 
 /* 邮件通知（SMTP）默认配置 */
 export const DEFAULT_EMAIL = {

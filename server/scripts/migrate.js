@@ -3,7 +3,8 @@ import mysql from 'mysql2/promise';
 import { pool } from '../src/db.js';
 import {
   DEFAULT_CONFIG, DEFAULT_NOTIFY, DEFAULT_BACKUP, DEFAULT_SUMMARY,
-  DEFAULT_EMAIL, DEFAULT_QUICK_PAID, SKIN_KEYS
+  DEFAULT_EMAIL, DEFAULT_QUICK_PAID, SKIN_KEYS,
+  DEFAULT_NOTIFY_TEMPLATE, DEFAULT_QUIET
 } from '../src/defaults.js';
 
 /* 幂等升级：已存在的旧库直接执行，不会重复加列或丢数据 */
@@ -84,6 +85,9 @@ async function main() {
       admin_note VARCHAR(500) DEFAULT NULL,
       proof VARCHAR(120) DEFAULT NULL,
       source VARCHAR(60) DEFAULT NULL,
+      nickname VARCHAR(20) DEFAULT NULL,
+      contact_email VARCHAR(120) DEFAULT NULL,
+      thanks_sent TINYINT(1) NOT NULL DEFAULT 0,
       ip VARCHAR(45) DEFAULT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -114,6 +118,12 @@ async function main() {
     'ALTER TABLE orders ADD COLUMN proof VARCHAR(120) NULL AFTER admin_note');
   await addColumn('orders', 'source',
     'ALTER TABLE orders ADD COLUMN source VARCHAR(60) NULL AFTER proof');
+  await addColumn('orders', 'nickname',
+    'ALTER TABLE orders ADD COLUMN nickname VARCHAR(20) NULL AFTER source');
+  await addColumn('orders', 'contact_email',
+    'ALTER TABLE orders ADD COLUMN contact_email VARCHAR(120) NULL AFTER nickname');
+  await addColumn('orders', 'thanks_sent',
+    'ALTER TABLE orders ADD COLUMN thanks_sent TINYINT(1) NOT NULL DEFAULT 0 AFTER contact_email');
 
   /* 老库的 status 枚举里没有 expired / refunded，需要扩展 */
   const [statusCol] = await pool.query(
@@ -210,7 +220,7 @@ async function main() {
       if (typeof conf.expireHours !== 'number') {
         conf.expireHours = DEFAULT_CONFIG.expireHours; changed = true;
       }
-      for (const k of ['customAmount', 'goal', 'wall', 'share']) {
+      for (const k of ['customAmount', 'goal', 'wall', 'share', 'rank']) {
         if (!conf[k] || typeof conf[k] !== 'object') {
           conf[k] = JSON.parse(JSON.stringify(DEFAULT_CONFIG[k])); changed = true;
         }
@@ -246,6 +256,15 @@ async function main() {
         changed = true;
       }
       if (!nconf.quickPaid) { nconf.quickPaid = JSON.parse(JSON.stringify(DEFAULT_QUICK_PAID)); changed = true; }
+      if (!nconf.templates || typeof nconf.templates !== 'object') {
+        nconf.templates = { newOrder: DEFAULT_NOTIFY_TEMPLATE }; changed = true;
+      } else if (!nconf.templates.newOrder) {
+        nconf.templates.newOrder = DEFAULT_NOTIFY_TEMPLATE; changed = true;
+      }
+      if (!nconf.quiet || typeof nconf.quiet !== 'object') {
+        nconf.quiet = JSON.parse(JSON.stringify(DEFAULT_QUIET)); changed = true;
+      }
+      if (!Number.isFinite(Number(nconf.muteUntil))) { nconf.muteUntil = 0; changed = true; }
       if (changed) {
         await pool.query("UPDATE settings SET v = ? WHERE k = 'notify_config'", [JSON.stringify(nconf)]);
         console.log('  + 已补充周期总结 / 邮件 / 一键到账默认配置');

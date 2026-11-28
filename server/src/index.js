@@ -8,7 +8,8 @@ import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
 import {
   DEFAULT_CONFIG, DEFAULT_NOTIFY, DEFAULT_SUMMARY, DEFAULT_EMAIL, DEFAULT_QUICK_PAID,
-  NOTIFY_TYPES, ROLES, SKIN_KEYS, DEFAULT_BACKUP
+  NOTIFY_TYPES, ROLES, SKIN_KEYS, DEFAULT_BACKUP,
+  DEFAULT_NOTIFY_TEMPLATE, DEFAULT_QUIET
 } from './defaults.js';
 import {
   setSessionCookie, clearSessionCookie, currentUser, rateLimit
@@ -166,6 +167,14 @@ function normalizeShare(input) {
   return { enabled, text };
 }
 
+function normalizeRank(input) {
+  const d = DEFAULT_CONFIG.rank;
+  const src = input && typeof input === 'object' ? input : {};
+  const enabled = input === undefined ? d.enabled : !!src.enabled;
+  const title = safeStr(src.title, 30) || d.title;
+  return { enabled, title };
+}
+
 function validateConfig(body) {
   if (!body || typeof body !== 'object') return null;
   const theme = validateTheme(body.theme);
@@ -201,7 +210,8 @@ function validateConfig(body) {
     customAmount: normalizeCustomAmount(body.customAmount),
     goal: normalizeGoal(body.goal),
     wall: normalizeWall(body.wall),
-    share: normalizeShare(body.share)
+    share: normalizeShare(body.share),
+    rank: normalizeRank(body.rank)
   };
 }
 
@@ -231,6 +241,7 @@ async function readConfig() {
     parsed.goal = normalizeGoal(parsed.goal);
     parsed.wall = normalizeWall(parsed.wall);
     parsed.share = normalizeShare(parsed.share);
+    parsed.rank = normalizeRank(parsed.rank);
     return parsed;
   }
   return DEFAULT_CONFIG;
@@ -315,8 +326,69 @@ function normalizeSummary(input) {
   return def;
 }
 
-async function sendEmail(ec, subject, text) {
-  if (!ec || !ec.host || !ec.to) return { ok: false, error: '邮件配置不完整' };
+/* 推送文案模板：最多 300 字，禁止尖括号，避免注入 */
+function normalizeTemplate(input) {
+  const raw = typeof input === 'string' ? input : '';
+  const s = raw.replace(/\r/g, '').trim();
+  if (!s || s.length > 300 || /[<>]/.test(s)) return DEFAULT_NOTIFY_TEMPLATE;
+  return s;
+}
+
+function normalizeTemplates(input) {
+  const src = input && typeof input === 'object' ? input : {};
+  return { newOrder: normalizeTemplate(src.newOrder) };
+}
+
+function validHM(s) {
+  return typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
+}
+
+function normalizeQuiet(input) {
+  const d = DEFAULT_QUIET;
+  const src = input && typeof input === 'object' ? input : {};
+  return {
+    enabled: !!src.enabled,
+    start: validHM(src.start) ? src.start : d.start,
+    end: validHM(src.end) ? src.end : d.end
+  };
+}
+
+function hmMinutes(s) {
+  const parts = String(s).split(':').map(Number);
+  return parts[0] * 60 + parts[1];
+}
+
+/* 当前是否处于夜间免打扰；start > end 表示跨午夜 */
+function inQuietHours(quiet, now) {
+  if (!quiet || !quiet.enabled) return false;
+  const cur = now.getHours() * 60 + now.getMinutes();
+  const s = hmMinutes(quiet.start);
+  const e = hmMinutes(quiet.end);
+  if (!Number.isFinite(s) || !Number.isFinite(e) || s === e) return false;
+  return s < e ? (cur >= s && cur < e) : (cur >= s || cur < e);
+}
+
+function muteInfo(muteUntil, now) {
+  const ts = Number(muteUntil) || 0;
+  if (ts > now.getTime()) return { muted: true, until: new Date(ts) };
+  return { muted: false, until: null };
+}
+
+function renderNewOrderText(tpl, o) {
+  return String(tpl || DEFAULT_NOTIFY_TEMPLATE)
+    .replace(/\{project\}/g, o.project)
+    .replace(/\{amount\}/g, String(o.amount))
+    .replace(/\{orderNo\}/g, o.orderNo)
+    .replace(/\{nickname\}/g, o.nickname || '匿名')
+    .replace(/\{note\}/g, o.note ? '留言：' + o.note + '\n' : '')
+    .replace(/\{source\}/g, o.source ? '来源：' + o.source + '\n' : '')
+    .replace(/\{time\}/g, new Date().toLocaleString('zh-CN'));
+}
+
+async function sendEmail(ec, subject, text, attachments, to) {
+  if (!ec || !ec.host) return { ok: false, error: '邮件配置不完整' };
+  const dest = safeStr(to, 300) || ec.to;
+  if (!dest) return { ok: false, error: '邮件配置不完整' };
   try {
     const nodemailer = (await import('nodemailer')).default;
     const transporter = nodemailer.createTransport({
@@ -327,12 +399,14 @@ async function sendEmail(ec, subject, text) {
       connectionTimeout: 8000,
       greetingTimeout: 8000
     });
-    await transporter.sendMail({
+    const mail = {
       from: ec.user || ec.to,
-      to: ec.to,
+      to: dest,
       subject: subject || '赞赏系统通知',
       text
-    });
+    };
+    if (attachments && attachments.length) mail.attachments = attachments;
+    await transporter.sendMail(mail);
     return { ok: true, status: 200 };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -377,7 +451,7 @@ function hasNotifyChannel(cfg) {
   return !!(cfg.email && cfg.email.enabled && cfg.email.host && cfg.email.to);
 }
 
-async function sendNotify(cfg, text, subject) {
+async function sendNotify(cfg, text, subject, attachments) {
   if (!cfg) return { ok: false, error: '未配置通知' };
   const tasks = [];
   const webhook = ['feishu', 'dingtalk', 'wecom', 'serverchan', 'generic'];
@@ -385,7 +459,7 @@ async function sendNotify(cfg, text, subject) {
     tasks.push({ name: 'webhook', p: sendWebhook(cfg, text, subject) });
   }
   if (cfg.email && cfg.email.enabled) {
-    tasks.push({ name: 'email', p: sendEmail(cfg.email, subject || '赞赏系统通知', text) });
+    tasks.push({ name: 'email', p: sendEmail(cfg.email, subject || '赞赏系统通知', text, attachments) });
   }
   if (!tasks.length) return { ok: false, error: '未配置通知' };
   const results = await Promise.all(tasks.map(t => t.p));
@@ -423,27 +497,41 @@ function fmtDT(d) {
 function fmtDate(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
 function fmtMD(d) { return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
 
-/* 计算各周期的时间窗起点（本地 00:00:00）与展示标签；统计口径必须绑定此窗口 */
+/* 计算各周期的时间窗（本地时间）与展示标签。
+   周总结在周一触发时统计「上周」，月总结在 1 号触发时统计「上月」，
+   其余时间统计本期至今，避免月初 / 周一推送空数据。 */
 function summaryWindow(period, now) {
   now = now || new Date();
   const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  let end = null;
   let label;
   if (period === 'daily') {
-    start.setHours(0, 0, 0, 0);
     label = fmtDate(start) + ' 00:00 至今';
   } else if (period === 'weekly') {
-    const diff = (start.getDay() + 6) % 7; // 周一为一周起点
-    start.setDate(start.getDate() - diff);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 6);
-    label = fmtMD(start) + ' 至 ' + fmtMD(end) + '（截至今日）';
+    if (start.getDay() === 1) {
+      const thisMonday = new Date(start);
+      start.setDate(start.getDate() - 7);
+      end = thisMonday;
+      label = fmtMD(start) + ' 至 ' + fmtMD(new Date(end.getTime() - 864e5)) + '（上周）';
+    } else {
+      const diff = (start.getDay() + 6) % 7; // 周一为一周起点
+      start.setDate(start.getDate() - diff);
+      label = fmtMD(start) + ' 至 ' + fmtMD(new Date(start.getTime() + 6 * 864e5)) + '（截至今日）';
+    }
   } else {
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
-    label = start.getFullYear() + '年' + pad2(start.getMonth() + 1) + '月（截至今日）';
+    if (start.getDate() === 1) {
+      const thisMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+      start.setMonth(start.getMonth() - 1);
+      start.setDate(1);
+      end = thisMonth;
+      label = start.getFullYear() + '年' + pad2(start.getMonth() + 1) + '月（上月）';
+    } else {
+      start.setDate(1);
+      label = start.getFullYear() + '年' + pad2(start.getMonth() + 1) + '月（截至今日）';
+    }
   }
-  return { start: fmtDT(start), label };
+  return { start: fmtDT(start), end: end ? fmtDT(end) : null, label };
 }
 
 /* 周期去重桶 key：同一桶内只发一次 */
@@ -459,7 +547,9 @@ function summaryBucket(period, now) {
 }
 
 async function summaryStats(period, now) {
-  const { start } = summaryWindow(period, now);
+  const win = summaryWindow(period, now);
+  const where = win.end ? 'created_at >= ? AND created_at < ?' : 'created_at >= ?';
+  const params = win.end ? [win.start, win.end] : [win.start];
   const [rows] = await pool.query(
     `SELECT COUNT(*) AS total_count,
             COALESCE(SUM(amount),0) AS total_sum,
@@ -469,15 +559,15 @@ async function summaryStats(period, now) {
             COALESCE(SUM(CASE WHEN status='pending' THEN amount ELSE 0 END),0) AS pending_sum,
             SUM(CASE WHEN status='refunded' THEN 1 ELSE 0 END) AS refunded_count,
             COALESCE(SUM(CASE WHEN status='refunded' THEN amount ELSE 0 END),0) AS refunded_sum
-     FROM orders WHERE created_at >= ?`,
-    [start]
+     FROM orders WHERE ` + where,
+    params
   );
   const r = rows[0] || {};
   const [proj] = await pool.query(
     `SELECT project, COUNT(*) AS count, COALESCE(SUM(amount),0) AS sum
-     FROM orders WHERE created_at >= ?
+     FROM orders WHERE ` + where + `
      GROUP BY project ORDER BY sum DESC LIMIT 20`,
-    [start]
+    params
   );
   return {
     totalCount: Number(r.total_count) || 0,
@@ -523,6 +613,9 @@ async function loadNotifyConfig() {
   base.email = normalizeEmail(base.email);
   if (base.type === 'email') base.email.enabled = true;
   base.quickPaid = normalizeQuickPaid(base.quickPaid);
+  base.templates = normalizeTemplates(base.templates);
+  base.quiet = normalizeQuiet(base.quiet);
+  base.muteUntil = Number(base.muteUntil) > 0 ? Number(base.muteUntil) : 0;
   return base;
 }
 
@@ -532,7 +625,24 @@ async function sendSummary(period, now) {
   const win = summaryWindow(period, now);
   const stats = await summaryStats(period, now);
   const text = buildSummaryText(period, stats, win.label, now);
-  const result = await sendNotify(cfg, text, '赞赏' + ({ daily: '日报', weekly: '周报', monthly: '月报' }[period] || '总结'));
+
+  /* 月报附本月/上月订单明细 CSV，方便直接归档对账 */
+  let attachments;
+  if (period === 'monthly') {
+    try {
+      const rows = await ordersInWindow(win.start, win.end);
+      const csv = buildOrdersCsv(rows);
+      attachments = [{
+        filename: 'zan-orders-' + win.start.slice(0, 7) + '.csv',
+        content: Buffer.from('\ufeff' + csv, 'utf8')
+      }];
+    } catch (e) {
+      console.error('[summary:csv]', e.message);
+    }
+  }
+
+  const result = await sendNotify(cfg, text,
+    '赞赏' + ({ daily: '日报', weekly: '周报', monthly: '月报' }[period] || '总结'), attachments);
   if (!result.ok) console.error('[summary] 推送失败：', period, result.error || result.status);
   return result;
 }
@@ -746,46 +856,139 @@ app.get('/api/stats/sources', requireUser, async (req, res) => {
   }
 });
 
+/* 转化漏斗：访问 → 发起订单 → 已到账 */
+app.get('/api/stats/funnel', requireUser, async (req, res) => {
+  let days = Number(req.query.days);
+  if ([7, 30, 90].indexOf(days) < 0) days = 30;
+  try {
+    const [[st]] = await pool.query(
+      `SELECT COALESCE(SUM(pv),0) AS pv, COALESCE(SUM(uv),0) AS uv
+       FROM daily_stats WHERE day >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`, [days - 1]
+    );
+    const [[od]] = await pool.query(
+      `SELECT COUNT(*) AS cnt, COALESCE(SUM(status = 'paid'), 0) AS paid
+       FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`, [days - 1]
+    );
+    const uv = Number(st.uv) || 0;
+    const pv = Number(st.pv) || 0;
+    const orders = Number(od.cnt) || 0;
+    const paid = Number(od.paid) || 0;
+    const rate = (a, b) => b > 0 ? Math.round((a / b) * 1000) / 10 : 0;
+    res.json({
+      days, pv, uv, orders, paid,
+      visitToOrder: rate(orders, uv),
+      orderToPaid: rate(paid, orders),
+      visitToPaid: rate(paid, uv)
+    });
+  } catch (e) {
+    console.error('[stats:funnel]', e.message);
+    res.status(500).json({ error: '读取失败' });
+  }
+});
+
+/* 金额档位分布：近 N 天各金额的发起与到账笔数 */
+app.get('/api/stats/amounts', requireUser, async (req, res) => {
+  let days = Number(req.query.days);
+  if ([30, 90, 180].indexOf(days) < 0) days = 90;
+  try {
+    const [rows] = await pool.query(
+      `SELECT amount, COUNT(*) AS cnt, COALESCE(SUM(status = 'paid'), 0) AS paid_cnt,
+              COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) AS paid_sum
+       FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+       GROUP BY amount ORDER BY amount ASC`, [days - 1]
+    );
+    const r2 = v => Math.round(Number(v) * 100) / 100;
+    res.json({
+      days,
+      items: rows.map(r => ({
+        amount: r2(r.amount),
+        count: Number(r.cnt),
+        paidCount: Number(r.paid_cnt),
+        paidSum: r2(r.paid_sum)
+      }))
+    });
+  } catch (e) {
+    console.error('[stats:amounts]', e.message);
+    res.status(500).json({ error: '读取失败' });
+  }
+});
+
+/* 生成二维码（SVG），用于后台渠道链接分享 */
+app.get('/api/qr', requireUser, async (req, res) => {
+  const text = String(req.query.text || '').trim();
+  if (!text || text.length > 500) return res.status(400).json({ error: '二维码内容不正确' });
+  const size = Math.max(120, Math.min(600, Number(req.query.size) || 240));
+  try {
+    const mod = await import('qrcode');
+    const QRCode = mod.default || mod;
+    const svg = await QRCode.toString(text, {
+      type: 'svg', margin: 1, width: size,
+      color: { dark: '#2b2b2b', light: '#ffffff' }
+    });
+    res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(svg);
+  } catch (e) {
+    console.error('[qr]', e.message);
+    res.status(500).json({ error: '生成失败，请确认已安装 qrcode 依赖' });
+  }
+});
+
+/* 按创建时间窗口取订单；start 为空表示全部 */
+async function ordersInWindow(start, end) {
+  let sql = `SELECT order_no, project, amount, status, source, nickname, contact_email,
+                    note, admin_note, created_at, paid_at
+             FROM orders`;
+  const params = [];
+  if (start) {
+    if (end) { sql += ' WHERE created_at >= ? AND created_at < ?'; params.push(start, end); }
+    else { sql += ' WHERE created_at >= ?'; params.push(start); }
+  }
+  sql += ' ORDER BY created_at DESC';
+  const [rows] = await pool.query(sql, params);
+  return rows;
+}
+
+/* 生成对账 CSV（不含 BOM，调用方按需添加） */
+function buildOrdersCsv(rows) {
+  const statusMap = { pending: '待核对', paid: '已到账', expired: '已过期', refunded: '已退款' };
+  const cell = v => {
+    const s = v == null ? '' : String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const head = ['订单号', '项目', '金额', '状态', '来源', '昵称', '联系邮箱', '留言', '内部备注', '创建时间', '到账时间'];
+  const lines = [head.join(',')];
+  for (const r of rows) {
+    lines.push([
+      r.order_no, r.project, r.amount, statusMap[r.status] || r.status,
+      r.source || '', r.nickname || '', r.contact_email || '', r.note || '', r.admin_note || '',
+      r.created_at ? fmtDT(new Date(r.created_at)) : '',
+      r.paid_at ? fmtDT(new Date(r.paid_at)) : ''
+    ].map(cell).join(','));
+  }
+  return lines.join('\r\n');
+}
+
 /* 导出对账 CSV，可按月（YYYY-MM），不传则导出全部 */
 app.get('/api/orders/export', requireUser, async (req, res) => {
   const month = String(req.query.month || '').trim();
-  let where = '';
-  const params = [];
+  let start = null;
+  let end = null;
   if (month) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       return res.status(400).json({ error: '月份格式应为 YYYY-MM' });
     }
     const y = Number(month.slice(0, 4));
     const m = Number(month.slice(5, 7));
-    const start = new Date(y, m - 1, 1, 0, 0, 0);
-    const end = new Date(y, m, 1, 0, 0, 0);
-    where = 'WHERE created_at >= ? AND created_at < ?';
-    params.push(fmtDT(start), fmtDT(end));
+    start = fmtDT(new Date(y, m - 1, 1, 0, 0, 0));
+    end = fmtDT(new Date(y, m, 1, 0, 0, 0));
   }
   try {
-    const [rows] = await pool.query(
-      `SELECT order_no, project, amount, status, source, note, admin_note, created_at, paid_at
-       FROM orders ` + where + ` ORDER BY created_at DESC`, params
-    );
-    const statusMap = { pending: '待核对', paid: '已到账', expired: '已过期', refunded: '已退款' };
-    const cell = v => {
-      const s = v == null ? '' : String(v);
-      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
-    const head = ['订单号', '项目', '金额', '状态', '来源', '留言', '内部备注', '创建时间', '到账时间'];
-    const lines = [head.join(',')];
-    for (const r of rows) {
-      lines.push([
-        r.order_no, r.project, r.amount, statusMap[r.status] || r.status,
-        r.source || '', r.note || '', r.admin_note || '',
-        r.created_at ? fmtDT(new Date(r.created_at)) : '',
-        r.paid_at ? fmtDT(new Date(r.paid_at)) : ''
-      ].map(cell).join(','));
-    }
+    const rows = await ordersInWindow(start, end);
     const fname = 'zan-orders-' + (month || 'all') + '.csv';
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="' + fname + '"');
-    res.send('\ufeff' + lines.join('\r\n'));
+    res.send('\ufeff' + buildOrdersCsv(rows));
   } catch (e) {
     console.error('[orders:export]', e.message);
     res.status(500).json({ error: '导出失败' });
@@ -967,17 +1170,47 @@ app.get('/api/wall', async (req, res) => {
     const cfg = await readConfig();
     if (!cfg.wall || !cfg.wall.enabled) return res.json({ enabled: false, items: [] });
     const [rows] = await pool.query(
-      `SELECT project, note, created_at FROM orders
+      `SELECT project, note, nickname, created_at FROM orders
        WHERE status = 'paid' AND note IS NOT NULL AND note <> ''
        ORDER BY created_at DESC LIMIT 30`
     );
     res.json({
       enabled: true,
       title: cfg.wall.title,
-      items: rows.map(r => ({ project: r.project, note: r.note, time: r.created_at }))
+      items: rows.map(r => ({
+        project: r.project, note: r.note, nickname: r.nickname || '匿名', time: r.created_at
+      }))
     });
   } catch (e) {
     console.error('[wall]', e.message);
+    res.status(500).json({ enabled: false, items: [] });
+  }
+});
+
+/* 公开：本月支持榜（按昵称聚合已到账金额，未填昵称合并为「匿名」） */
+app.get('/api/rank', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const cfg = await readConfig();
+    if (!cfg.rank || !cfg.rank.enabled) return res.json({ enabled: false, items: [] });
+    const [rows] = await pool.query(
+      `SELECT COALESCE(NULLIF(nickname, ''), '匿名') AS name,
+              COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS sum
+       FROM orders
+       WHERE status = 'paid' AND created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+       GROUP BY name ORDER BY sum DESC LIMIT 10`
+    );
+    res.json({
+      enabled: true,
+      title: cfg.rank.title,
+      items: rows.map(r => ({
+        name: r.name,
+        count: Number(r.cnt),
+        amount: Math.round(Number(r.sum) * 100) / 100
+      }))
+    });
+  } catch (e) {
+    console.error('[rank]', e.message);
     res.status(500).json({ enabled: false, items: [] });
   }
 });
@@ -1041,6 +1274,11 @@ app.put('/api/notify', requireUser, requireRole('admin'), async (req, res) => {
     cfg.summary = req.body?.summary === undefined
       ? normalizeSummary(existing && existing.summary)
       : normalizeSummary(req.body.summary);
+    cfg.templates = normalizeTemplates(req.body?.templates === undefined
+      ? (existing && existing.templates) : req.body.templates);
+    cfg.quiet = normalizeQuiet(req.body?.quiet === undefined
+      ? (existing && existing.quiet) : req.body.quiet);
+    cfg.muteUntil = Number(existing && existing.muteUntil) || 0;
     if (cfg.email.enabled && (!cfg.email.host || !cfg.email.to)) {
       return res.status(400).json({ error: '启用邮件通知需填写 SMTP 服务器和收件人' });
     }
@@ -1067,6 +1305,35 @@ app.post('/api/notify/test', requireUser, requireRole('admin'), async (req, res)
     return res.status(400).json({ error: result.error || ('推送失败，接口返回 ' + result.status) });
   }
   res.json({ ok: true, sent: result.sent });
+});
+
+/* 临时静音新订单推送（不影响系统告警与周期总结） */
+app.post('/api/notify/mute', requireUser, requireRole('admin'), async (req, res) => {
+  const duration = String(req.body?.duration || '');
+  const now = new Date();
+  let muteUntil = 0;
+  if (duration === 'off') {
+    muteUntil = 0;
+  } else if (duration === '1h') {
+    muteUntil = now.getTime() + 3600 * 1000;
+  } else if (duration === 'today') {
+    const t = new Date(now);
+    t.setHours(24, 0, 0, 0);
+    muteUntil = t.getTime();
+  } else {
+    return res.status(400).json({ error: '静音时长不正确' });
+  }
+  try {
+    const cfg = await loadNotifyConfig();
+    cfg.muteUntil = muteUntil;
+    await writeSetting('notify_config', cfg);
+    await audit(req.user.username, 'notify_mute',
+      muteUntil ? '临时静音至 ' + new Date(muteUntil).toLocaleString('zh-CN') : '取消临时静音', req.ip);
+    res.json({ ok: true, muteUntil });
+  } catch (e) {
+    console.error('[notify:mute]', e.message);
+    res.status(500).json({ error: '保存失败' });
+  }
 });
 
 /* 立即推送一份指定周期的总结（用于面板验证） */
@@ -1186,6 +1453,7 @@ app.post('/api/orders/quick-paid/:id', async (req, res) => {
       return renderQuickPaid(res, 400, '该订单当前状态无法标记到账', '');
     }
     await audit('quick-link', 'order_status', '订单 #' + v.id + ' 通过推送链接标记到账', req.ip);
+    maybeSendThanks(v.id);
     renderQuickPaid(res, 200, '已标记到账', '');
   } catch (e) {
     console.error('[orders:quick-paid:post]', e.message);
@@ -1206,6 +1474,10 @@ app.post('/api/orders', async (req, res) => {
   if (/[<>"']/.test(source)) source = '';
   let note = String(req.body?.note || '').trim().slice(0, 100);
   if (/[<>]/.test(note)) note = '';
+  let nickname = String(req.body?.nickname || '').trim().slice(0, 20);
+  if (/[<>"']/.test(nickname)) nickname = '';
+  let contactEmail = String(req.body?.contactEmail || '').trim().toLowerCase().slice(0, 120);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(contactEmail)) contactEmail = '';
 
   if (!/^[A-Za-z0-9-]{6,40}$/.test(orderNo)) {
     return res.status(400).json({ error: '订单号格式不正确' });
@@ -1219,11 +1491,13 @@ app.post('/api/orders', async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      'INSERT INTO orders (order_no, project, amount, note, source, ip) VALUES (?, ?, ?, ?, ?, ?)',
-      [orderNo, project, amount.toFixed(2), note || null, source || null, ip.slice(0, 45)]
+      `INSERT INTO orders (order_no, project, amount, note, source, nickname, contact_email, ip)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [orderNo, project, amount.toFixed(2), note || null, source || null,
+        nickname || null, contactEmail || null, ip.slice(0, 45)]
     );
 
-    notifyNewOrder({ id: result.insertId, orderNo, project, amount, source, note });
+    notifyNewOrder({ id: result.insertId, orderNo, project, amount, source, note, nickname });
 
     res.status(201).json({ ok: true, id: result.insertId });
   } catch (e) {
@@ -1245,15 +1519,20 @@ function quickPaidLink(id, baseUrl) {
   return baseUrl + '/api/orders/quick-paid/' + id + '?exp=' + exp + '&t=' + signQuickPaid(id, exp);
 }
 
-async function notifyNewOrder({ id, orderNo, project, amount, source, note }) {
+async function notifyNewOrder({ id, orderNo, project, amount, source, note, nickname }) {
   try {
     const cfg = await loadNotifyConfig();
     if (!hasNotifyChannel(cfg)) return;
-    let text = '【新赞赏】' + project + ' ¥' + amount + '\n' +
-      '订单号：' + orderNo + '\n' +
-      (note ? '留言：' + note + '\n' : '') +
-      (source ? '来源：' + source + '\n' : '') +
-      '时间：' + new Date().toLocaleString('zh-CN');
+    const now = new Date();
+    if (muteInfo(cfg.muteUntil, now).muted) {
+      console.log('[notify] 临时静音中，跳过新订单推送');
+      return;
+    }
+    if (inQuietHours(cfg.quiet, now)) {
+      console.log('[notify] 夜间免打扰中，跳过新订单推送');
+      return;
+    }
+    let text = renderNewOrderText(cfg.templates.newOrder, { orderNo, project, amount, source, note, nickname });
     if (cfg.quickPaid && cfg.quickPaid.enabled) {
       const link = quickPaidLink(id, cfg.quickPaid.baseUrl);
       if (link) text += '\n一键标记到账（7 天内有效）：\n' + link;
@@ -1265,11 +1544,44 @@ async function notifyNewOrder({ id, orderNo, project, amount, source, note }) {
   }
 }
 
+/* 到账感谢邮件：仅当打赏者留下邮箱、邮件通道可用且尚未发送过 */
+async function maybeSendThanks(orderId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, order_no, project, amount, nickname, contact_email, thanks_sent
+       FROM orders WHERE id = ? LIMIT 1`, [orderId]
+    );
+    const o = rows[0];
+    if (!o || !o.contact_email || o.thanks_sent) return;
+    const cfg = await loadNotifyConfig();
+    const ec = cfg.email;
+    if (!ec || !ec.enabled || !ec.host) return;
+    const text = [
+      (o.nickname ? o.nickname + '，' : '你好，') + '感谢你对《' + o.project + '》的赞赏！',
+      '',
+      '金额：¥' + Number(o.amount).toFixed(2),
+      '订单号：' + o.order_no,
+      '',
+      '这份支持让创作更有动力，祝一切顺利。'
+    ].join('\n');
+    const r = await sendEmail(ec, '感谢你的赞赏 · ' + o.project, text, null, o.contact_email);
+    if (!r.ok) {
+      console.error('[thanks] 发送失败：', r.error);
+      return;
+    }
+    await pool.query('UPDATE orders SET thanks_sent = 1 WHERE id = ?', [orderId]);
+    console.log('[thanks] 已发送感谢邮件 #' + orderId);
+  } catch (e) {
+    console.error('[thanks]', e.message);
+  }
+}
+
 app.get('/api/orders', requireUser, async (req, res) => {
   try {
     await expireStale(false);
     const [rows] = await pool.query(
       `SELECT id, order_no, project, amount, status, note, admin_note, proof, source,
+              nickname, contact_email, thanks_sent,
               UNIX_TIMESTAMP(created_at) * 1000 AS created_ms,
               UNIX_TIMESTAMP(paid_at) * 1000 AS paid_ms
        FROM orders ORDER BY id DESC LIMIT 1000`
@@ -1285,6 +1597,9 @@ app.get('/api/orders', requireUser, async (req, res) => {
         adminNote: r.admin_note || '',
         proof: r.proof || '',
         source: r.source || '',
+        nickname: r.nickname || '',
+        contactEmail: r.contact_email || '',
+        thanksSent: !!r.thanks_sent,
         createdMs: Number(r.created_ms),
         paidMs: r.paid_ms == null ? null : Number(r.paid_ms)
       }))
@@ -1363,6 +1678,7 @@ app.patch('/api/orders/:id', requireUser, requireRole('admin', 'editor'), async 
       await audit(req.user.username, 'order_admin_note',
         '订单 #' + id + ' 内部备注：' + (adminNote || '（清空）'), req.ip);
     }
+    if (hasStatus && status === 'paid') maybeSendThanks(id);
     res.json({
       ok: true,
       status: hasStatus ? status : undefined,
@@ -1718,6 +2034,7 @@ app.post('/api/orders/import', requireUser, requireRole('admin', 'editor'), asyn
       await audit(req.user.username, 'order_import',
         '导入对账单：' + rows.length + ' 行，匹配 ' + matched.length + ' 笔，标记到账 ' + updated + ' 笔', req.ip);
     }
+    for (const c of changes) maybeSendThanks(c.id);
 
     res.json({
       ok: true,
@@ -1817,6 +2134,7 @@ app.post('/api/orders/batch', requireUser, requireRole('admin', 'editor'), async
     await audit(req.user.username, 'order_batch',
       '批量' + ({ paid: '标记到账', pending: '取消到账', refunded: '标记退款', delete: '删除' }[action]) +
       ' ' + result.affectedRows + ' 条', req.ip);
+    if (action === 'paid') clean.forEach(id => maybeSendThanks(id));
     res.json({ ok: true, affected: result.affectedRows });
   } catch (e) {
     console.error('[orders:batch]', e.message);
@@ -2084,13 +2402,16 @@ app.post('/api/backups/:file/restore', requireUser, requireRole('admin'), async 
     await conn.beginTransaction();
     await conn.query('DELETE FROM orders');
     for (const o of orders) {
-      const status = (o.status === 'paid' || o.status === 'expired') ? o.status : 'pending';
+      const status = (o.status === 'paid' || o.status === 'expired' || o.status === 'refunded')
+        ? o.status : 'pending';
       await conn.query(
-        `INSERT INTO orders (id, order_no, project, amount, status, paid_at, note, admin_note, proof, source, ip, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO orders (id, order_no, project, amount, status, paid_at, note, admin_note, proof,
+                             source, nickname, contact_email, thanks_sent, ip, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [o.id, o.order_no, o.project, Number(o.amount) || 0, status, sqlTime(o.paid_at),
-          o.note || null, o.admin_note || null, o.proof || null, o.source || null, o.ip || null,
-          sqlTime(o.created_at) || new Date()]
+          o.note || null, o.admin_note || null, o.proof || null, o.source || null,
+          o.nickname || null, o.contact_email || null, o.thanks_sent ? 1 : 0,
+          o.ip || null, sqlTime(o.created_at) || new Date()]
       );
     }
     const settingsRows = Array.isArray(data.tables.settings) ? data.tables.settings : [];

@@ -118,6 +118,8 @@
     font-family:inherit;transition:border-color .16s;
   }
   .msg-wrap input:focus{border-color:var(--coral);}
+  .donor-fields{display:flex;gap:8px;margin-bottom:8px;}
+  .donor-fields input{flex:1;min-width:0;}
   .pay-status{
     margin-top:12px;padding:9px 12px;border-radius:10px;font-size:13px;
     background:#f2fbf5;color:#2e8b57;border:1px solid #d8f0e0;
@@ -175,6 +177,11 @@
   .wall li{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;}
   .wall .w-note{font-size:13px;color:var(--ink);line-height:1.6;word-break:break-word;}
   .wall .w-meta{font-size:11px;color:var(--muted);margin-top:6px;}
+  .rank-list li{display:flex;align-items:center;gap:10px;}
+  .rank-list .r-no{width:20px;text-align:center;font-size:12px;color:var(--muted);}
+  .rank-list .r-name{flex:1;min-width:0;font-size:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rank-list .r-amt{font-size:12px;font-weight:600;color:var(--coral-deep);}
+  body.skin-night .rank-list .r-amt{color:#e8a08f;}
   /* 分享 */
   .share{margin-top:12px;}
   .share-copy{width:100%;height:40px;border:1px solid var(--coral);background:#fdece8;color:var(--coral-deep);border-radius:10px;font-size:13.5px;cursor:pointer;font-family:inherit;}
@@ -358,6 +365,10 @@
     <nav class="tabs" id="tabs" aria-label="选择项目"></nav>
 
     <div class="msg-wrap">
+      <div class="donor-fields">
+        <input id="donorName" maxlength="20" placeholder="昵称（可选，默认匿名）">
+        <input id="donorEmail" type="email" maxlength="120" placeholder="邮箱（可选，到账后收感谢信）">
+      </div>
       <input id="donorMsg" maxlength="100" placeholder="留句话吧（可选，最多 100 字）">
     </div>
 
@@ -373,6 +384,11 @@
     <section class="wall" id="wallBox" hidden>
       <h2 id="wallTitle">大家的留言</h2>
       <ul id="wallList"></ul>
+    </section>
+
+    <section class="wall" id="rankBox" hidden>
+      <h2 id="rankTitle">本月支持榜</h2>
+      <ul id="rankList" class="rank-list"></ul>
     </section>
 
     <p class="note" id="pageNote">赞赏是为表示鼓励而对文章内容的无偿赠予</p>
@@ -653,9 +669,38 @@
         p.textContent = it.note;
         const m = document.createElement('div');
         m.className = 'w-meta';
-        m.textContent = (it.project || '') + ' · ' + fmtDay(it.time);
+        m.textContent = (it.nickname || '匿名') + ' · ' + (it.project || '') + ' · ' + fmtDay(it.time);
         li.appendChild(p);
         li.appendChild(m);
+        ul.appendChild(li);
+      });
+    } catch (e) { box.hidden = true; }
+  }
+
+  async function loadRank() {
+    const box = document.getElementById('rankBox');
+    try {
+      const res = await fetch('/api/rank', { cache: 'no-store' });
+      const d = await res.json();
+      if (!d || !d.enabled || !Array.isArray(d.items) || !d.items.length) { box.hidden = true; return; }
+      box.hidden = false;
+      document.getElementById('rankTitle').textContent = d.title || '本月支持榜';
+      const ul = document.getElementById('rankList');
+      ul.innerHTML = '';
+      d.items.forEach((it, i) => {
+        const li = document.createElement('li');
+        const no = document.createElement('span');
+        no.className = 'r-no';
+        no.textContent = String(i + 1);
+        const name = document.createElement('span');
+        name.className = 'r-name';
+        name.textContent = it.name;
+        const amt = document.createElement('span');
+        amt.className = 'r-amt';
+        amt.textContent = '¥' + money(it.amount);
+        li.appendChild(no);
+        li.appendChild(name);
+        li.appendChild(amt);
         ul.appendChild(li);
       });
     } catch (e) { box.hidden = true; }
@@ -759,7 +804,9 @@
     copyBtn.textContent = '复制';
     copyBtn.classList.remove('copied');
     const msg = (document.getElementById('donorMsg').value || '').trim().slice(0, 100);
-    reportOrder({ order: orderNo, project: p.name, amount: amount, note: msg });
+    const nickname = (document.getElementById('donorName').value || '').trim().slice(0, 20);
+    const contactEmail = (document.getElementById('donorEmail').value || '').trim().slice(0, 120);
+    reportOrder({ order: orderNo, project: p.name, amount: amount, note: msg, nickname, contactEmail });
 
     startPoll(orderNo);
 
@@ -833,6 +880,7 @@
     trackView();
     loadGoal();
     loadWall();
+    loadRank();
   })();
 </script>
 </body>
