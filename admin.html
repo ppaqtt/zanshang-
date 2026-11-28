@@ -74,6 +74,7 @@
   }
   .field input:focus,.field select:focus{border-color:#eaa393;}
   .field input.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;}
+  .field label input[type=checkbox]{width:auto;height:auto;margin-right:6px;vertical-align:-2px;padding:0;}
 
   .proj{border:1px solid #f0f0f2;border-radius:12px;padding:14px;margin-bottom:12px;background:#fcfcfd;}
   .proj-grid{display:grid;grid-template-columns:1.2fr .7fr 1.7fr 1.7fr;gap:10px;}
@@ -152,6 +153,7 @@
   .badge.paid{background:#eaf7ee;color:#2e8b57;}
   .badge.pending{background:#fff4e5;color:#b7791f;}
   .badge.expired{background:#f2f2f5;color:#8a8a8a;}
+  .badge.refunded{background:#fde8e8;color:#c0392b;}
   .badge.role{background:#f2f2f5;color:#666;margin-left:4px;}
   select.roleSel{border:1px solid #e4e4e6;border-radius:8px;padding:5px 8px;font-size:12px;background:#fff;color:#555;}
 
@@ -320,6 +322,7 @@
           <div class="dash-item"><div class="k">已确认到账</div><div class="v">¥<span id="dashPaidSum">0</span></div></div>
           <div class="dash-item"><div class="k">待核对</div><div class="v" id="dashPending">0<small>笔</small></div></div>
           <div class="dash-item"><div class="k">已过期</div><div class="v" id="dashExpired">0<small>笔</small></div></div>
+          <div class="dash-item"><div class="k">已退款</div><div class="v" id="dashRefunded">0<small>笔</small></div></div>
         </div>
       </section>
 
@@ -357,6 +360,27 @@
         <div class="card-head"><div><h2>项目分布</h2></div></div>
         <div id="projectBars"></div>
       </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>渠道来源</h2>
+            <p>按订单来源（from 参数 / 外部 referrer）聚合，判断哪个入口更有效。</p>
+          </div>
+          <select id="sourceRange" class="roleSel">
+            <option value="7">近 7 天</option>
+            <option value="30" selected>近 30 天</option>
+            <option value="90">近 90 天</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>来源</th><th>笔数</th><th>金额</th><th>已到账</th><th>已到账金额</th></tr></thead>
+            <tbody id="sourceBody"></tbody>
+          </table>
+          <div class="empty" id="sourceEmpty" hidden>近段时间暂无来源数据</div>
+        </div>
+      </section>
     </section>
 
     <!-- 订单 -->
@@ -388,6 +412,7 @@
             <option value="pending">待核对</option>
             <option value="paid">已到账</option>
             <option value="expired">已过期</option>
+            <option value="refunded">已退款</option>
           </select>
           <select id="timeFilter">
             <option value="all">全部时间</option>
@@ -404,6 +429,7 @@
           <span class="count">已选 <span id="selCount">0</span> 条</span>
           <button class="btn sm" data-role="admin,editor" id="batchPaid">批量到账</button>
           <button class="btn ghost sm" data-role="admin,editor" id="batchPending">取消到账</button>
+          <button class="btn ghost sm" data-role="admin,editor" id="batchRefund">批量退款</button>
           <button class="btn danger sm" data-role="admin,editor" id="batchDel">批量删除</button>
         </div>
         <div class="table-wrap">
@@ -421,6 +447,8 @@
         <div class="actions">
           <button class="btn" id="importBtn" data-role="admin,editor">导入对账单</button>
           <button class="btn ghost" id="csvBtn">导出 CSV</button>
+          <input id="exportMonth" type="month" class="roleSel" style="max-width:160px" title="选择月份导出对账">
+          <button class="btn ghost" id="exportMonthBtn">导出月度对账</button>
           <button class="btn danger" id="clearBtn" data-role="admin,editor">清空记录</button>
           <span class="stamp" id="filterStamp"></span>
         </div>
@@ -467,6 +495,37 @@
           <input id="expireInput" type="number" min="0" max="720" value="24" style="max-width:200px">
         </div>
 
+        <div class="proj" style="background:#fff;margin-top:14px">
+          <div class="proj-grid" style="grid-template-columns:repeat(2,1fr)">
+            <div class="field">
+              <label><input type="checkbox" id="customEnabled"> 允许自定义金额</label>
+              <div style="display:flex;gap:8px;margin-top:6px">
+                <input id="customMin" type="number" min="0.01" step="0.01" placeholder="最低 1">
+                <input id="customMax" type="number" min="0.01" step="0.01" placeholder="最高 1000">
+              </div>
+            </div>
+            <div class="field">
+              <label><input type="checkbox" id="goalEnabled"> 前台展示本月目标</label>
+              <div style="display:flex;gap:8px;margin-top:6px">
+                <input id="goalTitle" maxlength="30" placeholder="本月小目标">
+                <input id="goalTarget" type="number" min="1" step="1" placeholder="目标金额">
+              </div>
+            </div>
+            <div class="field">
+              <label><input type="checkbox" id="wallEnabled"> 前台展示留言墙</label>
+              <input id="wallTitle" maxlength="30" placeholder="大家的留言" style="margin-top:6px">
+            </div>
+            <div class="field">
+              <label><input type="checkbox" id="shareEnabled"> 到账后显示分享文案</label>
+              <input id="shareText" maxlength="120" placeholder="我刚刚赞赏了《{project}》，感谢创作！" style="margin-top:6px">
+            </div>
+          </div>
+          <p style="font-size:12px;color:#8a8a8a;margin:10px 0 0;line-height:1.6">
+            留言墙只展示已到账且有留言的订单；在订单详情里点「隐藏留言」即可从前台移除。
+            分享文案支持 {project} 和 {amount} 占位符。
+          </p>
+        </div>
+
         <div id="projList" style="margin-top:16px;"></div>
 
         <div class="actions">
@@ -480,7 +539,7 @@
         <div class="card-head">
           <div>
             <h2>新订单通知</h2>
-            <p>有新订单时推送到飞书 / 钉钉 / Server 酱，地址需为公网 https 链接。</p>
+            <p>有新订单时推送到飞书 / 钉钉 / 企业微信 / Server 酱 / 邮件，地址需为公网 https 链接。</p>
           </div>
         </div>
         <div class="proj-grid" style="grid-template-columns:180px 1fr">
@@ -489,12 +548,34 @@
               <option value="none">关闭</option>
               <option value="feishu">飞书机器人</option>
               <option value="dingtalk">钉钉机器人</option>
+              <option value="wecom">企业微信机器人</option>
               <option value="serverchan">Server 酱</option>
               <option value="generic">通用 JSON</option>
+              <option value="email">邮件（SMTP）</option>
             </select>
           </div>
-          <div class="field"><label>Webhook 地址</label>
+          <div class="field" id="notifyUrlField"><label>Webhook 地址</label>
             <input id="notifyUrl" class="mono" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...">
+          </div>
+        </div>
+
+        <div class="proj-grid" id="emailFields" style="grid-template-columns:repeat(3,1fr);margin-top:10px" hidden>
+          <div class="field"><label>SMTP 服务器</label><input id="mailHost" placeholder="smtp.qq.com"></div>
+          <div class="field"><label>端口</label><input id="mailPort" type="number" min="1" max="65535" placeholder="465"></div>
+          <div class="field"><label>&nbsp;</label>
+            <label style="display:flex;align-items:center;gap:8px;height:38px;font-size:13px">
+              <input type="checkbox" id="mailSecure" style="width:auto"> 使用 SSL/TLS
+            </label>
+          </div>
+          <div class="field"><label>账号</label><input id="mailUser" placeholder="you@qq.com" autocomplete="off"></div>
+          <div class="field"><label>授权码 / 密码</label><input id="mailPass" type="password" autocomplete="new-password"></div>
+          <div class="field"><label>收件人（可逗号分隔）</label><input id="mailTo" placeholder="you@qq.com"></div>
+        </div>
+
+        <div class="proj-grid" style="grid-template-columns:1fr;margin-top:10px">
+          <div class="field">
+            <label><input type="checkbox" id="quickPaidEnabled"> 推送内附「一键标记到账」链接</label>
+            <input id="quickPaidBase" class="mono" placeholder="站点公网地址，如 https://zan.example.com（链接 7 天有效）">
           </div>
         </div>
         <div class="actions">
@@ -695,6 +776,14 @@
     <h3>订单详情</h3>
     <div class="kv" id="orderMeta"></div>
     <div class="field" style="margin-top:10px">
+      <label>订单状态</label>
+      <select id="orderStatus">
+        <option value="pending">待核对</option>
+        <option value="paid">已到账</option>
+        <option value="refunded">已退款</option>
+      </select>
+    </div>
+    <div class="field" style="margin-top:10px">
       <label>用户备注 / 对账附注（最多 200 字）</label>
       <textarea id="orderNote" style="min-height:56px"></textarea>
     </div>
@@ -713,7 +802,8 @@
     </div>
     <div class="row" style="margin-top:14px">
       <button class="btn ghost" type="button" id="orderCancel">关闭</button>
-      <button class="btn" type="button" id="orderSave">保存备注</button>
+      <button class="btn ghost" type="button" id="orderHideNote">隐藏留言</button>
+      <button class="btn" type="button" id="orderSave">保存</button>
     </div>
   </div>
 </div>
@@ -845,7 +935,8 @@
     switchTab('dashboard');
     renderOrders();
     renderDashboard();
-    await Promise.all([loadConfig(), loadOrders(), loadTraffic(), loadSummary()]);
+    await Promise.all([loadConfig(), loadOrders(), loadTraffic(), loadSummary(), loadSources()]);
+    initExportMonth();
     if (isAdmin()) {
       await Promise.all([loadAdmins(), loadLogs(1), loadNotify()]);
     }
@@ -965,6 +1056,20 @@
     $('titleInput').value = t.title || '';
     $('pageTitleInput').value = t.pageTitle || '';
     $('footerInput').value = t.footer || '';
+    const ca = state.config.customAmount || {};
+    $('customEnabled').checked = ca.enabled !== false;
+    $('customMin').value = ca.min == null ? 1 : ca.min;
+    $('customMax').value = ca.max == null ? 1000 : ca.max;
+    const g = state.config.goal || {};
+    $('goalEnabled').checked = !!g.enabled;
+    $('goalTitle').value = g.title || '本月小目标';
+    $('goalTarget').value = g.target == null ? 500 : g.target;
+    const w = state.config.wall || {};
+    $('wallEnabled').checked = !!w.enabled;
+    $('wallTitle').value = w.title || '大家的留言';
+    const sh = state.config.share || {};
+    $('shareEnabled').checked = sh.enabled !== false;
+    $('shareText').value = sh.text || '';
     renderSkinSwatches(t.skin);
     renderProjects();
   }
@@ -1019,7 +1124,31 @@
     }
     expireHours = Math.round(expireHours);
 
-    return { amounts, theme, projects, expireHours };
+    const customAmount = {
+      enabled: $('customEnabled').checked,
+      min: Number($('customMin').value) || 1,
+      max: Number($('customMax').value) || 1000
+    };
+    if (customAmount.min <= 0 || customAmount.max <= 0 || customAmount.min > customAmount.max) {
+      toast('自定义金额范围不正确：最低金额需小于最高金额');
+      return null;
+    }
+    const goalTarget = Number($('goalTarget').value);
+    const goal = {
+      enabled: $('goalEnabled').checked,
+      title: $('goalTitle').value.trim() || '本月小目标',
+      target: Number.isFinite(goalTarget) && goalTarget > 0 ? goalTarget : 500
+    };
+    const wall = {
+      enabled: $('wallEnabled').checked,
+      title: $('wallTitle').value.trim() || '大家的留言'
+    };
+    const share = {
+      enabled: $('shareEnabled').checked,
+      text: $('shareText').value.trim() || '我刚刚赞赏了《{project}》，感谢创作！'
+    };
+
+    return { amounts, theme, projects, expireHours, customAmount, goal, wall, share };
   }
 
   $('saveBtn').addEventListener('click', async () => {
@@ -1073,12 +1202,29 @@
     };
   }
 
+  function syncNotifyTypeUI() {
+    const type = $('notifyType').value;
+    $('emailFields').hidden = type !== 'email';
+    $('notifyUrlField').hidden = type === 'email' || type === 'none';
+  }
+
   async function loadNotify() {
     try {
       fillSummarySelects();
       const cfg = await apiJson('/api/notify');
       $('notifyType').value = cfg.type || 'none';
       $('notifyUrl').value = cfg.url || '';
+      const e = cfg.email || {};
+      $('mailHost').value = e.host || '';
+      $('mailPort').value = e.port || 465;
+      $('mailSecure').checked = e.secure !== false;
+      $('mailUser').value = e.user || '';
+      $('mailPass').value = e.pass || '';
+      $('mailTo').value = e.to || '';
+      const q = cfg.quickPaid || {};
+      $('quickPaidEnabled').checked = !!q.enabled;
+      $('quickPaidBase').value = q.baseUrl || '';
+      syncNotifyTypeUI();
       const s = cfg.summary || {};
       const set = (id, val) => { const el = $(id); if (el) el.value = val; };
       $('summaryDailyEnabled').checked = !!(s.daily && s.daily.enabled);
@@ -1092,15 +1238,40 @@
     } catch (e) {}
   }
 
+  $('notifyType').addEventListener('change', syncNotifyTypeUI);
+
   $('notifySave').addEventListener('click', async () => {
     const type = $('notifyType').value;
     const url = $('notifyUrl').value.trim();
-    if (type !== 'none' && !/^https:\/\//i.test(url)) {
+    if (type !== 'none' && type !== 'email' && !/^https:\/\//i.test(url)) {
       toast('Webhook 地址必须以 https:// 开头');
       return;
     }
+    const email = {
+      host: $('mailHost').value.trim(),
+      port: Number($('mailPort').value) || 465,
+      secure: $('mailSecure').checked,
+      user: $('mailUser').value.trim(),
+      pass: $('mailPass').value,
+      to: $('mailTo').value.trim()
+    };
+    if (type === 'email' && (!email.host || !email.to)) {
+      toast('邮件通知需填写 SMTP 服务器和收件人');
+      return;
+    }
+    const quickPaid = {
+      enabled: $('quickPaidEnabled').checked,
+      baseUrl: $('quickPaidBase').value.trim()
+    };
+    if (quickPaid.enabled && !/^https?:\/\//i.test(quickPaid.baseUrl)) {
+      toast('一键到账需填写站点地址（http/https 开头）');
+      return;
+    }
     try {
-      await apiJson('/api/notify', { method: 'PUT', body: JSON.stringify({ type, url, summary: collectSummary() }) });
+      await apiJson('/api/notify', {
+        method: 'PUT',
+        body: JSON.stringify({ type, url, email, quickPaid, summary: collectSummary() })
+      });
       $('notifyStamp').textContent = '已保存 ' + timeText(Date.now());
       toast(type === 'none' ? '已关闭通知' : '通知设置已保存');
     } catch (e) {
@@ -1145,6 +1316,7 @@
       renderOrders();
       renderDashboard();
       loadSummary();
+      loadSources();
     } catch (e) { /* 401 已处理 */ }
   }
 
@@ -1194,6 +1366,7 @@
   function statusBadge(s) {
     if (s === 'paid') return '<span class="badge paid">已到账</span>';
     if (s === 'expired') return '<span class="badge expired">已过期</span>';
+    if (s === 'refunded') return '<span class="badge refunded">已退款</span>';
     return '<span class="badge pending">待核对</span>';
   }
 
@@ -1281,6 +1454,7 @@
   }
 
   let dialogOrderId = null;
+  let dialogOriginalStatus = 'pending';
 
   function renderProof(o) {
     $('proofBox').innerHTML = o.proof
@@ -1298,6 +1472,10 @@
       '<br>生成 ' + timeText(o.createdMs) + (o.paidMs ? ' · 到账 ' + timeText(o.paidMs) : '');
     $('orderNote').value = o.note || '';
     $('orderAdminNote').value = o.adminNote || '';
+    dialogOriginalStatus = o.status;
+    $('orderStatus').value = (o.status === 'paid' || o.status === 'refunded') ? o.status : 'pending';
+    $('orderStatus').disabled = !canEdit();
+    $('orderHideNote').hidden = !canEdit() || !o.note;
     $('orderNote').readOnly = !canEdit();
     $('orderAdminNote').readOnly = !canEdit();
     $('orderSave').hidden = !canEdit();
@@ -1314,18 +1492,47 @@
 
   $('orderSave').addEventListener('click', async () => {
     if (!dialogOrderId) return;
+    const payload = { note: $('orderNote').value, adminNote: $('orderAdminNote').value };
+    const st = $('orderStatus').value;
+    if (st !== dialogOriginalStatus) payload.status = st;
     try {
       const data = await apiJson('/api/orders/' + dialogOrderId, {
         method: 'PATCH',
-        body: JSON.stringify({ note: $('orderNote').value, adminNote: $('orderAdminNote').value })
+        body: JSON.stringify(payload)
       });
       const o = state.orders.find(x => x.id === dialogOrderId);
-      if (o) { o.note = data.note || ''; o.adminNote = data.adminNote || ''; }
+      if (o) {
+        o.note = data.note || '';
+        o.adminNote = data.adminNote || '';
+        if (data.status) {
+          o.status = data.status;
+          o.paidMs = data.status === 'paid' ? Date.now() : null;
+        }
+      }
       renderOrders();
+      renderDashboard();
       closeOrderDialog();
       toast('已保存');
     } catch (e) {
       toast(e.message || '保存失败');
+    }
+  });
+
+  $('orderHideNote').addEventListener('click', async () => {
+    if (!dialogOrderId) return;
+    try {
+      await apiJson('/api/orders/' + dialogOrderId, {
+        method: 'PATCH',
+        body: JSON.stringify({ note: '' })
+      });
+      const o = state.orders.find(x => x.id === dialogOrderId);
+      if (o) o.note = '';
+      $('orderNote').value = '';
+      $('orderHideNote').hidden = true;
+      renderOrders();
+      toast('留言已隐藏，前台不再展示');
+    } catch (e) {
+      toast(e.message || '操作失败');
     }
   });
 
@@ -1414,6 +1621,42 @@
     toast('已导出 ' + rows.length + ' 条记录');
   }
 
+  async function loadSources() {
+    try {
+      const days = Number($('sourceRange').value) || 30;
+      const data = await apiJson('/api/stats/sources?days=' + days);
+      const items = data.items || [];
+      const body = $('sourceBody');
+      body.innerHTML = '';
+      $('sourceEmpty').hidden = items.length > 0;
+      items.forEach(it => {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + esc(it.source) + '</td>' +
+          '<td class="num">' + it.count + '</td>' +
+          '<td class="num">¥' + fmtMoney(it.sum) + '</td>' +
+          '<td class="num">' + it.paidCount + '</td>' +
+          '<td class="num">¥' + fmtMoney(it.paidSum) + '</td>';
+        body.appendChild(tr);
+      });
+    } catch (e) { /* 忽略 */ }
+  }
+
+  $('sourceRange').addEventListener('change', loadSources);
+
+  function initExportMonth() {
+    const d = new Date();
+    const p = n => (n < 10 ? '0' + n : '' + n);
+    $('exportMonth').value = d.getFullYear() + '-' + p(d.getMonth() + 1);
+  }
+
+  $('exportMonthBtn').addEventListener('click', () => {
+    const m = $('exportMonth').value;
+    if (!m) { toast('请先选择月份'); return; }
+    window.location.href = '/api/orders/export?month=' + encodeURIComponent(m);
+    toast('已开始导出 ' + m + ' 对账 CSV');
+  });
+
   /* ---------- 数据看板 ---------- */
 
   function fmtMoney(n) {
@@ -1440,8 +1683,9 @@
       $('dashPaidSum').textContent = fmtMoney(s.paidSum);
       $('dashPending').innerHTML = s.pendingCount + '<small>笔</small>';
       $('dashExpired').innerHTML = s.expiredCount + '<small>笔</small>';
+      $('dashRefunded').innerHTML = (s.refundedCount || 0) + '<small>笔</small>';
     } else {
-      let sum = 0, paidSum = 0, pending = 0, expired = 0;
+      let sum = 0, paidSum = 0, pending = 0, expired = 0, refunded = 0;
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       let todayCount = 0, todaySum = 0;
       orders.forEach(o => {
@@ -1449,6 +1693,7 @@
         sum += amt;
         if (o.status === 'paid') paidSum += amt;
         else if (o.status === 'expired') expired += 1;
+        else if (o.status === 'refunded') refunded += 1;
         else pending += 1;
         if (o.createdMs >= todayStart.getTime()) { todayCount += 1; todaySum += amt; }
       });
@@ -1462,6 +1707,7 @@
       $('dashPaidSum').textContent = fmtMoney(paidSum);
       $('dashPending').innerHTML = pending + '<small>笔</small>';
       $('dashExpired').innerHTML = expired + '<small>笔</small>';
+      $('dashRefunded').innerHTML = refunded + '<small>笔</small>';
     }
 
     renderChart(orders, Number($('chartRange').value) || 14);
@@ -2079,6 +2325,7 @@
   });
   $('batchPaid').addEventListener('click', () => runBatch('paid', '已批量标记到账'));
   $('batchPending').addEventListener('click', () => runBatch('pending', '已批量取消到账'));
+  $('batchRefund').addEventListener('click', () => runBatch('refunded', '已批量标记退款'));
   $('batchDel').addEventListener('click', () => runBatch('delete', '已批量删除'));
 
   $('skinRow').addEventListener('click', e => {

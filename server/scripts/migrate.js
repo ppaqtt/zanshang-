@@ -1,7 +1,10 @@
 import 'dotenv/config';
 import mysql from 'mysql2/promise';
 import { pool } from '../src/db.js';
-import { DEFAULT_CONFIG, DEFAULT_NOTIFY, DEFAULT_BACKUP, DEFAULT_SUMMARY, SKIN_KEYS } from '../src/defaults.js';
+import {
+  DEFAULT_CONFIG, DEFAULT_NOTIFY, DEFAULT_BACKUP, DEFAULT_SUMMARY,
+  DEFAULT_EMAIL, DEFAULT_QUICK_PAID, SKIN_KEYS
+} from '../src/defaults.js';
 
 /* 幂等升级：已存在的旧库直接执行，不会重复加列或丢数据 */
 async function columnExists(table, column) {
@@ -75,7 +78,7 @@ async function main() {
       order_no VARCHAR(40) NOT NULL,
       project VARCHAR(80) NOT NULL,
       amount DECIMAL(10,2) NOT NULL,
-      status ENUM('pending','paid','expired') NOT NULL DEFAULT 'pending',
+      status ENUM('pending','paid','expired','refunded') NOT NULL DEFAULT 'pending',
       paid_at DATETIME DEFAULT NULL,
       note VARCHAR(200) DEFAULT NULL,
       admin_note VARCHAR(500) DEFAULT NULL,
@@ -112,16 +115,16 @@ async function main() {
   await addColumn('orders', 'source',
     'ALTER TABLE orders ADD COLUMN source VARCHAR(60) NULL AFTER proof');
 
-  /* 老库的 status 枚举里没有 expired，需要扩展 */
+  /* 老库的 status 枚举里没有 expired / refunded，需要扩展 */
   const [statusCol] = await pool.query(
     `SELECT COLUMN_TYPE AS t FROM information_schema.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'status' LIMIT 1`
   );
-  if (statusCol.length && String(statusCol[0].t).indexOf('expired') < 0) {
+  if (statusCol.length && String(statusCol[0].t).indexOf('refunded') < 0) {
     await pool.query(
-      "ALTER TABLE orders MODIFY COLUMN status ENUM('pending','paid','expired') NOT NULL DEFAULT 'pending'"
+      "ALTER TABLE orders MODIFY COLUMN status ENUM('pending','paid','expired','refunded') NOT NULL DEFAULT 'pending'"
     );
-    console.log('  + orders.status 已支持 expired');
+    console.log('  + orders.status 已支持 expired / refunded');
   }
 
   if (!(await indexExists('orders', 'idx_status'))) {
@@ -207,6 +210,11 @@ async function main() {
       if (typeof conf.expireHours !== 'number') {
         conf.expireHours = DEFAULT_CONFIG.expireHours; changed = true;
       }
+      for (const k of ['customAmount', 'goal', 'wall', 'share']) {
+        if (!conf[k] || typeof conf[k] !== 'object') {
+          conf[k] = JSON.parse(JSON.stringify(DEFAULT_CONFIG[k])); changed = true;
+        }
+      }
       if (changed) {
         await pool.query("UPDATE settings SET v = ? WHERE k = 'page_config'", [JSON.stringify(conf)]);
         console.log('  + 已补充/修正页面配置');
@@ -220,16 +228,24 @@ async function main() {
   if (!notify.length) {
     await pool.query(
       "INSERT INTO settings (k, v) VALUES ('notify_config', ?)",
-      [JSON.stringify({ ...DEFAULT_NOTIFY, summary: DEFAULT_SUMMARY })]
+      [JSON.stringify({
+        ...DEFAULT_NOTIFY, summary: DEFAULT_SUMMARY,
+        email: DEFAULT_EMAIL, quickPaid: DEFAULT_QUICK_PAID
+      })]
     );
     console.log('  + 已写入默认通知配置');
   } else {
     let nconf = null;
     try { nconf = JSON.parse(notify[0].v); } catch (e) { nconf = null; }
-    if (nconf && typeof nconf === 'object' && !nconf.summary) {
-      nconf.summary = JSON.parse(JSON.stringify(DEFAULT_SUMMARY));
-      await pool.query("UPDATE settings SET v = ? WHERE k = 'notify_config'", [JSON.stringify(nconf)]);
-      console.log('  + 已补充周期总结默认配置');
+    if (nconf && typeof nconf === 'object') {
+      let changed = false;
+      if (!nconf.summary) { nconf.summary = JSON.parse(JSON.stringify(DEFAULT_SUMMARY)); changed = true; }
+      if (!nconf.email) { nconf.email = JSON.parse(JSON.stringify(DEFAULT_EMAIL)); changed = true; }
+      if (!nconf.quickPaid) { nconf.quickPaid = JSON.parse(JSON.stringify(DEFAULT_QUICK_PAID)); changed = true; }
+      if (changed) {
+        await pool.query("UPDATE settings SET v = ? WHERE k = 'notify_config'", [JSON.stringify(nconf)]);
+        console.log('  + 已补充周期总结 / 邮件 / 一键到账默认配置');
+      }
     }
   }
 

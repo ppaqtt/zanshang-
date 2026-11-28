@@ -154,6 +154,30 @@
     color:#fff;
   }
 
+  /* 目标进度 */
+  .goal{margin:16px 20px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:#fff;}
+  .goal-head{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--ink);margin-bottom:8px;}
+  .goal-num{color:var(--muted);white-space:nowrap;}
+  .goal-bar{height:8px;border-radius:999px;background:#f0f0f2;overflow:hidden;}
+  .goal-bar i{display:block;height:100%;width:0;border-radius:999px;background:var(--coral);transition:width .5s ease;}
+  /* 自定义金额 */
+  .custom-toggle{margin:14px auto 0;display:block;background:none;border:1px dashed var(--line);color:var(--muted);border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit;}
+  .custom-toggle:hover{color:var(--coral);border-color:var(--coral);}
+  .custom{display:flex;gap:8px;padding:10px 20px 0;}
+  .custom input{flex:1;height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:15px;color:var(--ink);background:#fff;outline:none;font-family:inherit;}
+  .custom input:focus{border-color:var(--coral);}
+  .custom button{height:44px;padding:0 18px;border:none;border-radius:10px;background:var(--coral);color:#fff;font-size:15px;cursor:pointer;font-family:inherit;}
+  .custom-tip{margin:8px 20px 0;font-size:12px;color:#d0574a;}
+  /* 留言墙 */
+  .wall{padding:26px 20px 0;}
+  .wall h2{font-size:14px;font-weight:600;color:var(--ink);margin:0 0 10px;}
+  .wall ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;}
+  .wall li{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;}
+  .wall .w-note{font-size:13px;color:var(--ink);line-height:1.6;word-break:break-word;}
+  .wall .w-meta{font-size:11px;color:var(--muted);margin-top:6px;}
+  /* 分享 */
+  .share{margin-top:12px;}
+  .share-copy{width:100%;height:40px;border:1px solid var(--coral);background:#fdece8;color:var(--coral-deep);border-radius:10px;font-size:13.5px;cursor:pointer;font-family:inherit;}
   /* 底部声明 */
   .note{
     margin-top:auto;
@@ -309,6 +333,10 @@
   body.skin-night .avatar{border-color:#2a2a38;}
   body.skin-night .msg-wrap input{background:#2a2a38;border-color:#3a3a4c;color:#e8e8f0;}
   body.skin-night .pay-status{background:#22352a;border-color:#2e4a3a;color:#7ed6a0;}
+  body.skin-night .goal,body.skin-night .wall li{background:#2a2a38;border-color:#3a3a4c;}
+  body.skin-night .goal-bar{background:#23232f;}
+  body.skin-night .custom input{background:#2a2a38;border-color:#3a3a4c;color:#e8e8f0;}
+  body.skin-night .share-copy{background:#3a2a34;}
 </style>
 </head>
 <body>
@@ -322,6 +350,11 @@
       <p class="sub" id="subtitle"></p>
     </div>
 
+    <div class="goal" id="goalBox" hidden>
+      <div class="goal-head"><span id="goalTitle">本月小目标</span><span class="goal-num" id="goalNum"></span></div>
+      <div class="goal-bar"><i id="goalFill"></i></div>
+    </div>
+
     <nav class="tabs" id="tabs" aria-label="选择项目"></nav>
 
     <div class="msg-wrap">
@@ -329,6 +362,18 @@
     </div>
 
     <main class="grid" id="grid" aria-label="选择赞赏金额"></main>
+
+    <button class="custom-toggle" id="customToggle" type="button" hidden>其他金额</button>
+    <div class="custom" id="customBox" hidden>
+      <input id="customAmount" type="number" inputmode="decimal" min="1" step="1" placeholder="输入金额（元）">
+      <button id="customGo" type="button">赞赏</button>
+    </div>
+    <p class="custom-tip" id="customTip" hidden></p>
+
+    <section class="wall" id="wallBox" hidden>
+      <h2 id="wallTitle">大家的留言</h2>
+      <ul id="wallList"></ul>
+    </section>
 
     <p class="note" id="pageNote">赞赏是为表示鼓励而对文章内容的无偿赠予</p>
   </div>
@@ -345,6 +390,9 @@
       </div>
       <p class="modal-hint" id="modalHint"></p>
       <div class="pay-status" id="payStatus" hidden></div>
+      <div class="share" id="shareBox" hidden>
+        <button class="share-copy" id="shareCopy" type="button">复制感谢文案</button>
+      </div>
       <p class="modal-tip">付款时把订单号填入「添加备注」，方便核对</p>
       <p class="modal-note">订单号仅用于对账，不代表支付成功</p>
       <button class="modal-done" id="modalDone">完成</button>
@@ -390,6 +438,9 @@
   let THEME = null;
   let currentProject = 0;
   let selectedAmount = null;
+  let SHARE_CFG = null;
+  let CUSTOM_CFG = null;
+  let lastShareText = '';
 
   const tabsEl = document.getElementById('tabs');
   const gridEl = document.getElementById('grid');
@@ -552,6 +603,113 @@
     });
   }
 
+  function money(n) {
+    return Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+  }
+
+  function buildShareText(project, amount) {
+    if (!SHARE_CFG || !SHARE_CFG.enabled) return '';
+    return String(SHARE_CFG.text || '')
+      .replace(/\{project\}/g, project)
+      .replace(/\{amount\}/g, amount);
+  }
+
+  function fmtDay(t) {
+    if (!t) return '';
+    const d = new Date(String(t).replace(' ', 'T'));
+    if (isNaN(d.getTime())) return String(t).slice(0, 10);
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+  }
+
+  async function loadGoal() {
+    const box = document.getElementById('goalBox');
+    try {
+      const res = await fetch('/api/goal', { cache: 'no-store' });
+      const d = await res.json();
+      if (!d || !d.enabled || !(Number(d.target) > 0)) { box.hidden = true; return; }
+      box.hidden = false;
+      document.getElementById('goalTitle').textContent = d.title || '本月小目标';
+      document.getElementById('goalNum').textContent = '¥' + money(d.current) + ' / ¥' + money(d.target);
+      const pct = Math.max(0, Math.min(1, Number(d.current) / Number(d.target)));
+      const fill = document.getElementById('goalFill');
+      setTimeout(() => { fill.style.width = (pct * 100).toFixed(1) + '%'; }, 60);
+    } catch (e) { box.hidden = true; }
+  }
+
+  async function loadWall() {
+    const box = document.getElementById('wallBox');
+    try {
+      const res = await fetch('/api/wall', { cache: 'no-store' });
+      const d = await res.json();
+      if (!d || !d.enabled || !Array.isArray(d.items) || !d.items.length) { box.hidden = true; return; }
+      box.hidden = false;
+      document.getElementById('wallTitle').textContent = d.title || '大家的留言';
+      const ul = document.getElementById('wallList');
+      ul.innerHTML = '';
+      d.items.forEach(it => {
+        const li = document.createElement('li');
+        const p = document.createElement('div');
+        p.className = 'w-note';
+        p.textContent = it.note;
+        const m = document.createElement('div');
+        m.className = 'w-meta';
+        m.textContent = (it.project || '') + ' · ' + fmtDay(it.time);
+        li.appendChild(p);
+        li.appendChild(m);
+        ul.appendChild(li);
+      });
+    } catch (e) { box.hidden = true; }
+  }
+
+  function initCustomAmount() {
+    const toggle = document.getElementById('customToggle');
+    const box = document.getElementById('customBox');
+    const tip = document.getElementById('customTip');
+    if (!CUSTOM_CFG || !CUSTOM_CFG.enabled) {
+      toggle.hidden = true; box.hidden = true; tip.hidden = true;
+      return;
+    }
+    toggle.hidden = false;
+    toggle.addEventListener('click', () => {
+      box.hidden = !box.hidden;
+      if (!box.hidden) document.getElementById('customAmount').focus();
+    });
+    document.getElementById('customGo').addEventListener('click', submitCustom);
+    document.getElementById('customAmount').addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitCustom();
+    });
+  }
+
+  function submitCustom() {
+    const input = document.getElementById('customAmount');
+    const tip = document.getElementById('customTip');
+    const min = Number(CUSTOM_CFG.min) || 1;
+    const max = Number(CUSTOM_CFG.max) || 1000;
+    const val = Math.round(Number(input.value) * 100) / 100;
+    if (!Number.isFinite(val) || val < min || val > max) {
+      tip.textContent = '请输入 ' + min + ' ~ ' + max + ' 元之间的金额';
+      tip.hidden = false;
+      input.focus();
+      return;
+    }
+    tip.hidden = true;
+    selectedAmount = val;
+    renderGrid();
+    openModal(val);
+  }
+
+  document.getElementById('shareCopy').addEventListener('click', function () {
+    if (!lastShareText) return;
+    const btn = this;
+    copyText(lastShareText).then(() => {
+      btn.textContent = '已复制';
+      setTimeout(() => { btn.textContent = '复制感谢文案'; }, 1500);
+    }).catch(() => {
+      btn.textContent = '请手动复制';
+      setTimeout(() => { btn.textContent = '复制感谢文案'; }, 1800);
+    });
+  });
+
   let pollTimer = null;
   let pollOrder = null;
 
@@ -565,6 +723,7 @@
     const el = document.getElementById('payStatus');
     el.textContent = '已确认到账，非常感谢！';
     el.hidden = false;
+    if (lastShareText) document.getElementById('shareBox').hidden = false;
   }
 
   function startPoll(orderNo) {
@@ -591,6 +750,9 @@
     const p = PROJECTS[currentProject];
     modalTitle.textContent = '向「' + p.name + '」赞赏 ¥' + amount;
     modalHint.innerHTML = '长按识别二维码，在付款页选择「赞赏 ' + amount + '」';
+
+    lastShareText = buildShareText(p.name, amount);
+    document.getElementById('shareBox').hidden = true;
 
     const orderNo = genOrderNo(p);
     orderNoEl.textContent = orderNo;
@@ -651,6 +813,8 @@
         PROJECTS = data.projects;
         AMOUNTS = data.amounts;
         THEME = data.theme || null;
+        CUSTOM_CFG = data.customAmount || null;
+        SHARE_CFG = data.share || null;
         currentProject = 0;
       }
     } catch (e) { /* 接口不可用时用默认配置 */ }
@@ -658,12 +822,17 @@
 
   (async function init() {
     await loadRemoteConfig();
+    if (!CUSTOM_CFG) CUSTOM_CFG = { enabled: true, min: 1, max: 1000 };
+    if (!SHARE_CFG) SHARE_CFG = { enabled: true, text: '我刚刚赞赏了《{project}》，感谢创作！' };
     applyTheme(THEME);
     renderTabs();
     renderGrid();
     renderAvatar();
+    initCustomAmount();
     subtitleEl.textContent = PROJECTS[currentProject].sub;
     trackView();
+    loadGoal();
+    loadWall();
   })();
 </script>
 </body>

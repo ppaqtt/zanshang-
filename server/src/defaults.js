@@ -10,6 +10,10 @@ export const SKIN_KEYS = Object.keys(SKINS);
 export const DEFAULT_CONFIG = {
   amounts: [1, 5, 10, 20, 50, 100, 500, 666, 888, 1000],
   expireHours: 24,
+  customAmount: { enabled: true, min: 1, max: 1000 },
+  goal: { enabled: false, title: '本月小目标', target: 500 },
+  wall: { enabled: false, title: '大家的留言' },
+  share: { enabled: true, text: '我刚刚赞赏了《{project}》，感谢创作！' },
   theme: {
     skin: 'coral',
     accent: '#E4573D',
@@ -50,6 +54,19 @@ export const DEFAULT_CONFIG = {
 
 export const DEFAULT_NOTIFY = { type: 'none', url: '' };
 
+/* 邮件通知（SMTP）默认配置 */
+export const DEFAULT_EMAIL = {
+  host: '',
+  port: 465,
+  secure: true,
+  user: '',
+  pass: '',
+  to: ''
+};
+
+/* 推送内一键标记到账链接 */
+export const DEFAULT_QUICK_PAID = { enabled: false, baseUrl: '' };
+
 /* 周期总结默认配置；weekday: 0=周日,1=周一,...,6=周六；monthly day: 1-28 */
 export const DEFAULT_SUMMARY = {
   daily: { enabled: true, hour: 20 },
@@ -57,7 +74,7 @@ export const DEFAULT_SUMMARY = {
   monthly: { enabled: true, day: 1, hour: 9 }
 };
 
-export const NOTIFY_TYPES = ['none', 'feishu', 'dingtalk', 'serverchan', 'generic'];
+export const NOTIFY_TYPES = ['none', 'feishu', 'dingtalk', 'wecom', 'serverchan', 'generic', 'email'];
 
 export const ROLES = ['admin', 'editor', 'viewer'];
 
